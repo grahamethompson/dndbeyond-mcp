@@ -4,6 +4,10 @@ A TypeScript MCP (Model Context Protocol) server for D&D Beyond. Gives Claude (a
 
 > **Disclaimer:** This project uses unofficial, reverse-engineered D&D Beyond endpoints. It is not affiliated with, endorsed by, or supported by D&D Beyond or Wizards of the Coast. Endpoints may change without notice.
 
+## Credit
+
+This project is a fork of [AlexWorland/dndbeyond-mcp](https://github.com/AlexWorland/dndbeyond-mcp), originally created by [Alex Worland](https://github.com/AlexWorland). Thanks to Alex for creating and sharing the original project.
+
 ## Features
 
 - **Character Management** — Read character sheets, update HP, spell slots, death saves, currency
