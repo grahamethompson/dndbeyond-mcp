@@ -384,6 +384,56 @@ describe("AC Calculation", () => {
 });
 
 describe("Spell Save DC Calculation", () => {
+  it("should include prepared spells from the classSpells collection", async () => {
+    const character: DdbCharacter = {
+      ...baseCharacter,
+      classes: [
+        {
+          id: 1,
+          definition: { name: "Wizard" },
+          subclassDefinition: null,
+          level: 5,
+          isStartingClass: true,
+          classFeatures: [],
+        },
+      ],
+      inventory: [],
+      modifiers: { race: [], class: [], background: [], item: [], feat: [], condition: [] },
+      spells: { race: [], class: [], background: [], item: [], feat: [] },
+      classSpells: [{
+        entityTypeId: 1,
+        characterClassId: 1,
+        spells: [{
+          id: 99,
+          definition: {
+            id: 2247,
+            name: "Shield",
+            level: 1,
+            school: "Abjuration",
+            description: "A protective magical barrier.",
+            range: null,
+            duration: null,
+            activation: null,
+            components: null,
+            componentsDescription: null,
+            concentration: false,
+            ritual: false,
+          },
+          prepared: true,
+          alwaysPrepared: false,
+          usesSpellSlot: true,
+        }],
+      }],
+    };
+
+    const client = createMockClient();
+    vi.mocked(client.get).mockResolvedValue(character);
+
+    const result = await getCharacter(client, { characterId: 12345, detail: "sheet" });
+    expect(result.content[0].text).toContain("Prepared Spells:");
+    expect(result.content[0].text).toContain("Level 1: Shield");
+  });
+
   it("should calculate Cleric spell DC using WIS", async () => {
     const character: DdbCharacter = {
       ...baseCharacter,

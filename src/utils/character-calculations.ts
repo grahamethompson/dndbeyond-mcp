@@ -55,7 +55,24 @@ export function computeFinalAbilityScore(
   const baseValue = base.find((s) => s.id === id)?.value ?? 10;
   const bonusValue = bonus.find((s) => s.id === id)?.value ?? 0;
   const modifierBonus = sumModifierBonuses(modifiers, ABILITY_SUBTYPE_MAP[id] ?? "");
-  return baseValue + bonusValue + modifierBonus;
+  let score = baseValue + bonusValue + modifierBonus;
+
+  // Items such as a Belt of Giant Strength use a `set` modifier. D&D Beyond
+  // applies the set value only when it would improve the calculated score.
+  for (const list of Object.values(modifiers)) {
+    if (!Array.isArray(list)) continue;
+    for (const mod of list) {
+      if (
+        mod.type === "set" &&
+        mod.subType === ABILITY_SUBTYPE_MAP[id] &&
+        mod.value != null
+      ) {
+        score = Math.max(score, mod.value);
+      }
+    }
+  }
+
+  return score;
 }
 
 export function computeLevel(char: DdbCharacter): number {
@@ -89,24 +106,25 @@ export function calculateAc(char: DdbCharacter): number {
 
     const itemType = item.definition.type?.toLowerCase() || "";
     const filterType = item.definition.filterType?.toLowerCase() || "";
+    const armorTypeId = item.definition.armorTypeId;
 
     // Check for shield
-    if (itemType.includes("shield")) {
+    if (armorTypeId === 4 || itemType.includes("shield") || item.definition.baseArmorName?.toLowerCase() === "shield") {
       shieldBonus = item.definition.armorClass ?? 2;
       continue;
     }
 
     // Check for armor
-    if (itemType.includes("armor")) {
+    if (armorTypeId === 1 || armorTypeId === 2 || armorTypeId === 3 || itemType.includes("armor") || filterType === "armor") {
       const acValue = item.definition.armorClass ?? 10;
 
-      if (filterType.includes("heavy") || itemType.includes("heavy")) {
+      if (armorTypeId === 3 || filterType.includes("heavy") || itemType.includes("heavy")) {
         baseAc = acValue;
         armorType = "heavy";
-      } else if (filterType.includes("medium") || itemType.includes("medium")) {
+      } else if (armorTypeId === 2 || filterType.includes("medium") || itemType.includes("medium")) {
         baseAc = acValue;
         armorType = "medium";
-      } else if (filterType.includes("light") || itemType.includes("light")) {
+      } else if (armorTypeId === 1 || filterType.includes("light") || itemType.includes("light")) {
         baseAc = acValue;
         armorType = "light";
       } else {

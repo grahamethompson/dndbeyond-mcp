@@ -1,5 +1,9 @@
 # D&D Beyond MCP Server — Tool Test Report
 
+> **Historical document.** These February 2026 live results predate the current
+> character-app contract. The 2026-08-08 repair replaced the obsolete endpoints
+> and response assumptions; do not use the failure counts below as current status.
+
 **Date:** 2026-02-14
 **Test Method:** Live MCP tool calls against D&D Beyond production APIs
 **Test Character:** Jane Dont (ID: 161336179), Campaign: "One Shot" (ID: 7506650)

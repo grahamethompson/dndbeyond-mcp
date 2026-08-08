@@ -18,6 +18,15 @@ interface GameConfig {
   damageTypes: Array<{ id: number; name: string }>;
   senses: Array<{ id: number; name: string }>;
   sources?: Array<{ id: number; name: string }>;
+  conditions?: Array<{
+    definition: {
+      id: number;
+      name: string;
+      description: string;
+      slug: string;
+      levels?: Array<{ definition: { id: number; level: number; effect: string } }>;
+    };
+  }>;
 }
 
 const SIZE_MAP: Record<number, string> = {
@@ -127,7 +136,7 @@ const SPELLCASTING_CLASS_IDS = [1, 2, 3, 4, 5, 6, 7, 8]; // Bard through Wizard
  * Queries both classLevel=1 (for cantrips/level 0 spells) and classLevel=20 (for levels 1-9).
  * Deduplicates by spell definition name.
  */
-async function loadSpellCompendium(client: DdbClient): Promise<DdbSpell[]> {
+async function loadSpellCompendium(client: DdbClient, campaignId?: number): Promise<DdbSpell[]> {
   const allSpells = new Map<string, DdbSpell>();
   let failureCount = 0;
   const totalRequests = SPELLCASTING_CLASS_IDS.length * 4; // 2 for known, 2 for prepared
@@ -136,14 +145,15 @@ async function loadSpellCompendium(client: DdbClient): Promise<DdbSpell[]> {
     // Fetch cantrips (level 0) by querying at classLevel=1
     try {
       const cantrips = await client.get<DdbSpell[]>(
-        ENDPOINTS.gameData.alwaysKnownSpells(classId, 1),
-        `spell-compendium:class:${classId}:cantrips`,
+        ENDPOINTS.gameData.alwaysKnownSpells(classId, 1, campaignId),
+        `spell-compendium:${campaignId ?? "personal"}:class:${classId}:cantrips`,
         86_400_000, // 24h
       );
 
       for (const spell of cantrips ?? []) {
-        if (spell.definition?.name && !allSpells.has(spell.definition.name)) {
-          allSpells.set(spell.definition.name, spell);
+        if (spell.definition?.name) {
+          const key = String(spell.definition.id ?? spell.definition.definitionKey ?? `${spell.definition.name}:${spell.definition.isLegacy}`);
+          allSpells.set(key, spell);
         }
       }
     } catch {
@@ -153,14 +163,15 @@ async function loadSpellCompendium(client: DdbClient): Promise<DdbSpell[]> {
     // Fetch higher-level spells (levels 1-9) by querying at classLevel=20
     try {
       const spells = await client.get<DdbSpell[]>(
-        ENDPOINTS.gameData.alwaysKnownSpells(classId, 20),
-        `spell-compendium:class:${classId}`,
+        ENDPOINTS.gameData.alwaysKnownSpells(classId, 20, campaignId),
+        `spell-compendium:${campaignId ?? "personal"}:class:${classId}`,
         86_400_000, // 24h
       );
 
       for (const spell of spells ?? []) {
-        if (spell.definition?.name && !allSpells.has(spell.definition.name)) {
-          allSpells.set(spell.definition.name, spell);
+        if (spell.definition?.name) {
+          const key = String(spell.definition.id ?? spell.definition.definitionKey ?? `${spell.definition.name}:${spell.definition.isLegacy}`);
+          allSpells.set(key, spell);
         }
       }
     } catch {
@@ -170,14 +181,15 @@ async function loadSpellCompendium(client: DdbClient): Promise<DdbSpell[]> {
     // Fetch always-prepared cantrips (level 0) by querying at classLevel=1
     try {
       const preparedCantrips = await client.get<DdbSpell[]>(
-        ENDPOINTS.gameData.alwaysPreparedSpells(classId, 1),
-        `spell-compendium:class:${classId}:prepared-cantrips`,
+        ENDPOINTS.gameData.alwaysPreparedSpells(classId, 1, campaignId),
+        `spell-compendium:${campaignId ?? "personal"}:class:${classId}:prepared-cantrips`,
         86_400_000, // 24h
       );
 
       for (const spell of preparedCantrips ?? []) {
-        if (spell.definition?.name && !allSpells.has(spell.definition.name)) {
-          allSpells.set(spell.definition.name, spell);
+        if (spell.definition?.name) {
+          const key = String(spell.definition.id ?? spell.definition.definitionKey ?? `${spell.definition.name}:${spell.definition.isLegacy}`);
+          allSpells.set(key, spell);
         }
       }
     } catch {
@@ -187,14 +199,15 @@ async function loadSpellCompendium(client: DdbClient): Promise<DdbSpell[]> {
     // Fetch always-prepared spells (levels 1-9) by querying at classLevel=20
     try {
       const preparedSpells = await client.get<DdbSpell[]>(
-        ENDPOINTS.gameData.alwaysPreparedSpells(classId, 20),
-        `spell-compendium:class:${classId}:prepared`,
+        ENDPOINTS.gameData.alwaysPreparedSpells(classId, 20, campaignId),
+        `spell-compendium:${campaignId ?? "personal"}:class:${classId}:prepared`,
         86_400_000, // 24h
       );
 
       for (const spell of preparedSpells ?? []) {
-        if (spell.definition?.name && !allSpells.has(spell.definition.name)) {
-          allSpells.set(spell.definition.name, spell);
+        if (spell.definition?.name) {
+          const key = String(spell.definition.id ?? spell.definition.definitionKey ?? `${spell.definition.name}:${spell.definition.isLegacy}`);
+          allSpells.set(key, spell);
         }
       }
     } catch {
@@ -220,7 +233,7 @@ export async function searchSpells(
 ): Promise<ToolResult> {
   let allSpells: DdbSpell[];
   try {
-    allSpells = await loadSpellCompendium(client);
+    allSpells = await loadSpellCompendium(client, params.campaignId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load spell compendium";
     return { content: [{ type: "text", text: message }] };
@@ -260,6 +273,24 @@ export async function searchSpells(
     );
   }
 
+  if (params.rulesVersion === "2014") {
+    matchedSpells = matchedSpells.filter((spell) => spell.definition.isLegacy === true);
+  } else if (params.rulesVersion === "2024") {
+    matchedSpells = matchedSpells.filter((spell) => spell.definition.isLegacy !== true);
+  } else if (params.rulesVersion !== "all") {
+    // Default to one result per name, preferring the current (non-legacy)
+    // definition while retaining legacy-only spells.
+    const byName = new Map<string, DdbSpell>();
+    for (const spell of matchedSpells) {
+      const key = spell.definition.name.toLowerCase();
+      const existing = byName.get(key);
+      if (!existing || (existing.definition.isLegacy && !spell.definition.isLegacy)) {
+        byName.set(key, spell);
+      }
+    }
+    matchedSpells = Array.from(byName.values());
+  }
+
   // Sort by level then name
   matchedSpells.sort((a, b) => {
     if (a.definition.level !== b.definition.level) return a.definition.level - b.definition.level;
@@ -279,9 +310,10 @@ export async function searchSpells(
     if (spell.definition.concentration) tags.push("Concentration");
     if (spell.definition.ritual) tags.push("Ritual");
     const tagStr = tags.length > 0 ? ` (${tags.join(", ")})` : "";
+    const rulesTag = spell.definition.isLegacy ? " [2014 Legacy]" : "";
 
     lines.push(
-      `- **${spell.definition.name}** — ${level}, ${spell.definition.school}${tagStr}`
+      `- **${spell.definition.name}**${rulesTag} — ${level}, ${spell.definition.school}${tagStr}`
     );
   }
 
@@ -295,26 +327,31 @@ export async function searchSpells(
  */
 export async function getSpell(
   client: DdbClient,
-  params: { spellName: string },
+  params: { spellName: string; campaignId?: number; rulesVersion?: "2014" | "2024" },
   _characterIds?: number[]
 ): Promise<ToolResult> {
   const searchName = params.spellName.toLowerCase();
   let allSpells: DdbSpell[];
   try {
-    allSpells = await loadSpellCompendium(client);
+    allSpells = await loadSpellCompendium(client, params.campaignId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load spell compendium";
     return { content: [{ type: "text", text: message }] };
   }
 
   // Exact match first, then partial
-  let spell = allSpells.find(
-    (s) => s.definition.name.toLowerCase() === searchName
+  const versionMatches = (s: DdbSpell) =>
+    params.rulesVersion === "2014" ? s.definition.isLegacy === true :
+    params.rulesVersion === "2024" ? s.definition.isLegacy !== true : true;
+  let exact = allSpells.filter(
+    (s) => s.definition.name.toLowerCase() === searchName && versionMatches(s)
   );
+  let spell = exact.find((s) => !s.definition.isLegacy) ?? exact[0];
   if (!spell) {
-    spell = allSpells.find(
-      (s) => s.definition.name.toLowerCase().includes(searchName)
+    const partial = allSpells.filter(
+      (s) => s.definition.name.toLowerCase().includes(searchName) && versionMatches(s)
     );
+    spell = partial.find((s) => !s.definition.isLegacy) ?? partial[0];
   }
 
   if (!spell) {
@@ -379,10 +416,11 @@ function formatSpellDetails(spell: DdbSpell): ToolResult {
   if (def.concentration) tags.push("Concentration");
   if (def.ritual) tags.push("Ritual");
   const tagStr = tags.length > 0 ? ` (${tags.join(", ")})` : "";
+  const legacy = def.isLegacy ? " — 2014 Legacy" : "";
 
   const lines = [
     `# ${def.name}`,
-    `*${level} ${def.school}${tagStr}*\n`,
+    `*${level} ${def.school}${tagStr}${legacy}*\n`,
     `**Casting Time:** ${castingTime}`,
     `**Range:** ${range}`,
     `**Components:** ${components}`,
@@ -466,13 +504,15 @@ export async function searchMonsters(
   }
 
   let allMonsters: DdbMonster[] = [];
+  const accessTypes = new Map<number, number>();
   let totalInDataset = 0;
   let pagesSearched = 0;
   const maxPages = shouldPaginate ? 10 : 1; // Fetch up to 10 pages (200 results) when filtering
 
   // Fetch multiple pages if we're filtering without a name search
+  const requestedPage = Math.max(1, params.page ?? 1);
   for (let pageIdx = 0; pageIdx < maxPages; pageIdx++) {
-    const skip = pageIdx * 20;
+    const skip = (requestedPage - 1 + pageIdx) * 20;
     const url = ENDPOINTS.monster.search(searchTerm, skip, 20, params.showHomebrew, sourceId);
     const cacheKey = `monsters:search:${searchTerm}:${skip}:${params.showHomebrew ?? false}:${sourceId ?? ""}`;
 
@@ -485,6 +525,9 @@ export async function searchMonsters(
       }
 
       allMonsters.push(...response.data);
+      for (const [monsterId, accessType] of Object.entries(response.accessType ?? {})) {
+        accessTypes.set(Number(monsterId), accessType);
+      }
       pagesSearched++;
 
       // Stop if we've reached the end of available data
@@ -535,7 +578,7 @@ export async function searchMonsters(
 
   const searchInfo = shouldPaginate
     ? `searched ${allMonsters.length} of ${totalInDataset} total monsters across ${pagesSearched} pages`
-    : `showing results from page 1`;
+    : `showing results from page ${requestedPage}`;
 
   const lines = [`# Monster Search Results (${monsters.length} matches, ${searchInfo})\n`];
 
@@ -550,8 +593,10 @@ export async function searchMonsters(
     const sizeName = SIZE_MAP[m.sizeId] ?? "Unknown";
     const homebrewTag = m.isHomebrew ? " [Homebrew]" : "";
 
-    lines.push(
-      `- **${m.name}**${homebrewTag} — CR ${crStr}, ${sizeName} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP${m.isLegendary ? " ★" : ""}`
+    const restricted = accessTypes.get(m.id) === 4 || !m.stats?.length;
+    lines.push(restricted
+      ? `- **${m.name}**${homebrewTag} — CR ${crStr}, ${sizeName} ${typeName} [Restricted: stat block unavailable]`
+      : `- **${m.name}**${homebrewTag} — CR ${crStr}, ${sizeName} ${typeName}, AC ${m.armorClass}, ${m.averageHitPoints} HP${m.isLegendary ? " ★" : ""}`
     );
   }
 
@@ -596,6 +641,15 @@ export async function getMonster(
   if (!m) {
     return {
       content: [{ type: "text", text: `Monster "${params.monsterName}" not found.` }],
+    };
+  }
+
+  if (detailResponse.accessType === 4 && (!m.stats || m.stats.length === 0)) {
+    return {
+      content: [{
+        type: "text",
+        text: `# ${m.name}\n\n*Restricted: this monster's full stat block requires content access on D&D Beyond.*`,
+      }],
     };
   }
 
@@ -740,6 +794,7 @@ interface DdbItem {
   sources: Array<{ sourceId: number }>;
   canAttune: boolean;
   magic: boolean;
+  isLegacy?: boolean;
 }
 
 /**
@@ -751,8 +806,8 @@ export async function searchItems(
 ): Promise<ToolResult> {
   const cacheKey = "game-data:items";
   const items = await client.get<DdbItem[]>(
-    ENDPOINTS.gameData.items(),
-    cacheKey,
+    ENDPOINTS.gameData.items(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
   );
 
@@ -776,6 +831,15 @@ export async function searchItems(
         i.filterType?.toLowerCase().includes(searchType)
     );
   }
+
+  // Collapse 2014/2024 duplicates by name, preferring the current definition.
+  const itemByName = new Map<string, DdbItem>();
+  for (const item of matched) {
+    const key = item.name.toLowerCase();
+    const existing = itemByName.get(key);
+    if (!existing || (existing.isLegacy && !item.isLegacy)) itemByName.set(key, item);
+  }
+  matched = Array.from(itemByName.values());
 
   // Sort by name
   matched.sort((a, b) => a.name.localeCompare(b.name));
@@ -806,19 +870,21 @@ export async function searchItems(
  */
 export async function getItem(
   client: DdbClient,
-  params: { itemName: string }
+  params: { itemName: string; campaignId?: number }
 ): Promise<ToolResult> {
   const cacheKey = "game-data:items";
   const items = await client.get<DdbItem[]>(
-    ENDPOINTS.gameData.items(),
-    cacheKey,
+    ENDPOINTS.gameData.items(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
   );
 
   const searchName = params.itemName.toLowerCase();
-  let item = (items ?? []).find((i) => i.name.toLowerCase() === searchName);
+  let candidates = (items ?? []).filter((i) => i.name.toLowerCase() === searchName);
+  let item = candidates.find((i) => !i.isLegacy) ?? candidates[0];
   if (!item) {
-    item = (items ?? []).find((i) => i.name.toLowerCase().includes(searchName));
+    candidates = (items ?? []).filter((i) => i.name.toLowerCase().includes(searchName));
+    item = candidates.find((i) => !i.isLegacy) ?? candidates[0];
   }
 
   if (!item) {
@@ -872,8 +938,8 @@ export async function searchFeats(
 ): Promise<ToolResult> {
   const cacheKey = "game-data:feats";
   const feats = await client.get<DdbFeat[]>(
-    ENDPOINTS.gameData.feats(),
-    cacheKey,
+    ENDPOINTS.gameData.feats(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
   );
 
@@ -1044,10 +1110,39 @@ const CONDITIONS: Record<string, { name: string; description: string; effects: s
  * Get the rules text for a specific condition.
  */
 export async function getCondition(
-  _client: DdbClient,
+  client: DdbClient,
   params: { conditionName: string }
 ): Promise<ToolResult> {
   const searchName = params.conditionName.toLowerCase().trim();
+
+  try {
+    const config = await getGameConfig(client);
+    const definitions = (config.conditions ?? []).map((entry) => entry.definition);
+    const definition = definitions.find((entry) =>
+      entry.name.toLowerCase() === searchName || entry.slug?.toLowerCase() === searchName
+    ) ?? definitions.find((entry) =>
+      entry.name.toLowerCase().includes(searchName) || entry.slug?.toLowerCase().includes(searchName)
+    );
+
+    if (definition) {
+      // The config currently combines the 2024 text and a labeled legacy block
+      // in one HTML description. Return current rules by default instead of
+      // presenting both versions as though they were simultaneously active.
+      const currentDescription = stripHtml(definition.description)
+        .split(/Legacy Definition/i)[0]
+        .trim();
+      const lines = [`# ${definition.name}`, "", currentDescription];
+      if (definition.levels?.length) {
+        lines.push("", ...definition.levels.map((level) =>
+          `- Level ${level.definition.level}: ${level.definition.effect.split(/\s*\|\s*Legacy:/i)[0].trim()}`
+        ));
+      }
+      return { content: [{ type: "text", text: lines.join("\n") }] };
+    }
+  } catch {
+    // Fall back to the bundled SRD text when config is temporarily unavailable.
+  }
+
   const condition = CONDITIONS[searchName];
 
   if (!condition) {
@@ -1107,12 +1202,12 @@ interface DdbClass {
  */
 export async function searchClasses(
   client: DdbClient,
-  params: { className?: string }
+  params: { className?: string; campaignId?: number }
 ): Promise<ToolResult> {
   const cacheKey = "game-data:classes";
   const classes = await client.get<DdbClass[]>(
-    ENDPOINTS.gameData.classes(),
-    cacheKey,
+    ENDPOINTS.gameData.classes(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
   );
 
@@ -1137,7 +1232,10 @@ export async function searchClasses(
     const spellcasting = cls.spellCastingAbilityId
       ? ` | Spellcasting: ${STAT_NAMES[cls.spellCastingAbilityId] || "Yes"}`
       : "";
-    lines.push(`- **${cls.name}** — Hit Die: ${hitDie}${spellcasting}`);
+    const rulesTag = cls.sources?.some((source) => source.sourceId === 145)
+      ? " [2024]"
+      : cls.sources?.some((source) => source.sourceId === 1) ? " [2014]" : "";
+    lines.push(`- **${cls.name}**${rulesTag} — ID: ${cls.id} | Hit Die: ${hitDie}${spellcasting}`);
 
     const desc = stripHtml(cls.description || "").substring(0, 100);
     if (desc) lines.push(`  ${desc}${desc.length >= 100 ? "..." : ""}`);
@@ -1162,6 +1260,8 @@ interface DdbRace {
   isSubRace: boolean;
   size: string;
   sources: Array<{ sourceId: number }>;
+  name?: string;
+  racialTraits?: Array<{ definition: DdbRacialTrait }>;
 }
 
 /**
@@ -1173,21 +1273,22 @@ export async function searchRaces(
 ): Promise<ToolResult> {
   const cacheKey = "game-data:races";
   const races = await client.get<DdbRace[]>(
-    ENDPOINTS.gameData.races(),
-    cacheKey,
+    ENDPOINTS.gameData.races(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
   );
 
-  let matched = (races ?? []).filter((r) => r.fullName || r.baseName);
+  const getRaceName = (race: DdbRace) => race.fullName || race.baseName || race.name || "";
+  let matched = (races ?? []).filter((r) => getRaceName(r));
 
   if (params.name) {
     const searchName = params.name.toLowerCase();
     matched = matched.filter((r) =>
-      (r.fullName || r.baseName).toLowerCase().includes(searchName)
+      getRaceName(r).toLowerCase().includes(searchName)
     );
   }
 
-  matched.sort((a, b) => (a.fullName || a.baseName).localeCompare(b.fullName || b.baseName));
+  matched.sort((a, b) => getRaceName(a).localeCompare(getRaceName(b)));
 
   if (matched.length === 0) {
     return {
@@ -1197,10 +1298,10 @@ export async function searchRaces(
 
   const lines = [`# Race Search Results (${matched.length} found)\n`];
   for (const race of matched) {
-    const name = race.fullName || race.baseName;
+    const name = getRaceName(race);
     const desc = stripHtml(race.description || "").substring(0, 100);
     const legacy = race.isLegacy ? " *(Legacy)*" : "";
-    lines.push(`- **${name}**${legacy} — ${desc}${desc.length >= 100 ? "..." : ""}`);
+    lines.push(`- **${name}**${legacy} — Race ID: ${race.entityRaceId}, Type ID: ${race.entityRaceTypeId} — ${desc}${desc.length >= 100 ? "..." : ""}`);
   }
 
   return {
@@ -1227,8 +1328,8 @@ export async function searchBackgrounds(
 ): Promise<ToolResult> {
   const cacheKey = "game-data:backgrounds";
   const backgrounds = await client.get<DdbBackground[]>(
-    ENDPOINTS.gameData.backgrounds(),
-    cacheKey,
+    ENDPOINTS.gameData.backgrounds(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
   );
 
@@ -1250,7 +1351,7 @@ export async function searchBackgrounds(
   const lines = [`# Background Search Results (${matched.length} found)\n`];
   for (const bg of matched) {
     const desc = stripHtml(bg.description || "").substring(0, 100);
-    lines.push(`- **${bg.name}** — ${desc}${desc.length >= 100 ? "..." : ""}`);
+    lines.push(`- **${bg.name}** — ID: ${bg.id} — ${desc}${desc.length >= 100 ? "..." : ""}`);
   }
 
   return {
@@ -1279,11 +1380,23 @@ export async function searchClassFeatures(
   client: DdbClient,
   params: ClassFeatureSearchParams
 ): Promise<ToolResult> {
-  const cacheKey = "game-data:class-features";
-  const features = await client.get<DdbClassFeature[]>(
-    ENDPOINTS.gameData.classFeatureCollection(),
-    cacheKey,
+  const cacheKey = "game-data:classes";
+  const classes = await client.get<DdbClass[]>(
+    ENDPOINTS.gameData.classes(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
+  );
+
+  const features: DdbClassFeature[] = (classes ?? []).flatMap((cls) =>
+    (cls.classFeatures ?? []).map((feature) => ({
+      ...feature,
+      snippet: "",
+      requiredLevel: feature.level,
+      classId: cls.id,
+      className: cls.name,
+      isHomebrew: cls.isHomebrew,
+      sources: cls.sources,
+    }))
   );
 
   let matched = features ?? [];
@@ -1347,6 +1460,7 @@ interface DdbRacialTrait {
   raceName?: string;
   isHomebrew: boolean;
   sources: Array<{ sourceId: number }>;
+  requiredLevel?: number | null;
 }
 
 /**
@@ -1356,11 +1470,20 @@ export async function searchRacialTraits(
   client: DdbClient,
   params: RacialTraitSearchParams
 ): Promise<ToolResult> {
-  const cacheKey = "game-data:racial-traits";
-  const traits = await client.get<DdbRacialTrait[]>(
-    ENDPOINTS.gameData.racialTraitCollection(),
-    cacheKey,
+  const cacheKey = "game-data:races";
+  const races = await client.get<DdbRace[]>(
+    ENDPOINTS.gameData.races(params.campaignId),
+    `${cacheKey}:${params.campaignId ?? "personal"}`,
     86_400_000,
+  );
+
+  const traits: DdbRacialTrait[] = (races ?? []).flatMap((race) =>
+    (race.racialTraits ?? []).map((entry) => ({
+      ...entry.definition,
+      raceId: race.entityRaceId,
+      raceName: race.fullName || race.baseName || race.name || "Unknown",
+      isHomebrew: race.isHomebrew,
+    }))
   );
 
   let matched = traits ?? [];

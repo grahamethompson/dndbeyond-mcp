@@ -124,7 +124,7 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "list_characters",
-    "List all characters across all campaigns",
+    "List characters owned by the authenticated D&D Beyond user, including characters with no campaign",
     {},
     async () => listCharacters(client)
   );
@@ -190,11 +190,11 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "add_condition",
-    "Apply a condition to a character. Condition IDs: 1=Blinded, 2=Charmed, 3=Deafened, 4=Frightened, 5=Grappled, 6=Incapacitated, 7=Invisible, 8=Paralyzed, 9=Petrified, 10=Poisoned, 11=Prone, 12=Restrained, 13=Stunned, 14=Unconscious, 15=Exhaustion (use level 1-6)",
+    "Apply a condition to a character. IDs: 1=Blinded, 2=Charmed, 3=Deafened, 4=Exhaustion (level 1-6), 5=Frightened, 6=Grappled, 7=Incapacitated, 8=Invisible, 9=Paralyzed, 10=Petrified, 11=Poisoned, 12=Prone, 13=Restrained, 14=Stunned, 15=Unconscious",
     {
       characterId: z.coerce.number().describe("The character ID"),
       conditionId: z.coerce.number().describe("Condition ID (1-15)"),
-      level: z.coerce.number().optional().describe("Exhaustion level (1-6). Only used for Exhaustion (conditionId=15)."),
+      level: z.coerce.number().optional().describe("Exhaustion level (1-6). Only used for Exhaustion (conditionId=4)."),
     },
     async (params) =>
       addCondition(client, {
@@ -206,7 +206,7 @@ export async function startServer(): Promise<void> {
 
   server.tool(
     "remove_condition",
-    "Remove a condition from a character. Condition IDs: 1=Blinded, 2=Charmed, 3=Deafened, 4=Frightened, 5=Grappled, 6=Incapacitated, 7=Invisible, 8=Paralyzed, 9=Petrified, 10=Poisoned, 11=Prone, 12=Restrained, 13=Stunned, 14=Unconscious, 15=Exhaustion",
+    "Remove a condition from a character. IDs: 1=Blinded, 2=Charmed, 3=Deafened, 4=Exhaustion, 5=Frightened, 6=Grappled, 7=Incapacitated, 8=Invisible, 9=Paralyzed, 10=Petrified, 11=Poisoned, 12=Prone, 13=Restrained, 14=Stunned, 15=Unconscious",
     {
       characterId: z.coerce.number().describe("The character ID"),
       conditionId: z.coerce.number().describe("Condition ID (1-15)"),
@@ -686,6 +686,8 @@ export async function startServer(): Promise<void> {
         .describe("School of magic (e.g., evocation, abjuration)"),
       concentration: z.boolean().optional().describe("Requires concentration"),
       ritual: z.boolean().optional().describe("Can be cast as ritual"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
+      rulesVersion: z.enum(["2014", "2024", "all"]).optional().describe("Rules version; defaults to current definitions with legacy-only spells retained"),
     },
     async (params) =>
       searchSpells(client, {
@@ -694,6 +696,8 @@ export async function startServer(): Promise<void> {
         school: params.school,
         concentration: params.concentration,
         ritual: params.ritual,
+        campaignId: params.campaignId,
+        rulesVersion: params.rulesVersion,
       })
   );
 
@@ -702,9 +706,11 @@ export async function startServer(): Promise<void> {
     "Get full details for a specific spell by name from the compendium",
     {
       spellName: z.string().describe("The spell name"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
+      rulesVersion: z.enum(["2014", "2024"]).optional().describe("Prefer the 2014 legacy or 2024 definition; defaults to 2024 when both exist"),
     },
     async (params) =>
-      getSpell(client, { spellName: params.spellName })
+      getSpell(client, { spellName: params.spellName, campaignId: params.campaignId, rulesVersion: params.rulesVersion })
   );
 
   // Register reference tools - monsters
@@ -769,12 +775,14 @@ export async function startServer(): Promise<void> {
         .string()
         .optional()
         .describe("Item type (weapon, armor, potion, ring, etc.)"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       searchItems(client, {
         name: params.name,
         rarity: params.rarity,
         type: params.type,
+        campaignId: params.campaignId,
       })
   );
 
@@ -783,10 +791,12 @@ export async function startServer(): Promise<void> {
     "Get full details for a specific magic item by name",
     {
       itemName: z.string().describe("The item name"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       getItem(client, {
         itemName: params.itemName,
+        campaignId: params.campaignId,
       })
   );
 
@@ -796,10 +806,12 @@ export async function startServer(): Promise<void> {
     "Search for feats by name",
     {
       name: z.string().optional().describe("Feat name (partial match)"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       searchFeats(client, {
         name: params.name,
+        campaignId: params.campaignId,
       })
   );
 
@@ -824,10 +836,12 @@ export async function startServer(): Promise<void> {
     "Search for character classes and subclasses",
     {
       className: z.string().optional().describe("Class name (partial match)"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       searchClasses(client, {
         className: params.className,
+        campaignId: params.campaignId,
       })
   );
 
@@ -837,10 +851,12 @@ export async function startServer(): Promise<void> {
     "Search for character races by name",
     {
       name: z.string().optional().describe("Race name (partial match)"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       searchRaces(client, {
         name: params.name,
+        campaignId: params.campaignId,
       })
   );
 
@@ -850,10 +866,12 @@ export async function startServer(): Promise<void> {
     "Search for character backgrounds by name",
     {
       name: z.string().optional().describe("Background name (partial match)"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       searchBackgrounds(client, {
         name: params.name,
+        campaignId: params.campaignId,
       })
   );
 
@@ -865,12 +883,14 @@ export async function startServer(): Promise<void> {
       name: z.string().optional().describe("Feature name (partial match)"),
       className: z.string().optional().describe("Class name to filter by (e.g., 'Fighter', 'Wizard')"),
       level: z.coerce.number().optional().describe("Class level requirement"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       searchClassFeatures(client, {
         name: params.name,
         className: params.className,
         level: params.level,
+        campaignId: params.campaignId,
       })
   );
 
@@ -881,11 +901,13 @@ export async function startServer(): Promise<void> {
     {
       name: z.string().optional().describe("Trait name (partial match)"),
       raceName: z.string().optional().describe("Race name to filter by (e.g., 'Elf', 'Dwarf')"),
+      campaignId: z.coerce.number().optional().describe("Campaign ID to include content shared with that campaign"),
     },
     async (params) =>
       searchRacialTraits(client, {
         name: params.name,
         raceName: params.raceName,
+        campaignId: params.campaignId,
       })
   );
 

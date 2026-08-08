@@ -1,5 +1,57 @@
 # D&D Beyond API - Reverse Engineered Endpoints
 
+## Current Verified Contract (2026-08-08)
+
+The current contract below was verified against D&D Beyond's production APIs and
+the source map for the official character app. D&D Beyond does not publish this
+as a supported public API, so future character-app releases can change it again.
+
+### Character reads
+
+| Operation | Method and path | Notes |
+|---|---|---|
+| Owned characters | `GET /character/v5/characters/list?userId={userId}` | Returns `{ characterSlotLimit, canUnlockCharacters, characters }`; this is not a campaign party roster. |
+| Character sheet | `GET /character/v5/character/{id}?includeCustomItems=true` | Prepared class spells are primarily in `classSpells[].spells`, not only `spells.class`. |
+
+### Character gameplay writes
+
+All character gameplay endpoints below take `characterId` in the JSON body. The
+character ID is not part of these paths.
+
+| Operation | Method and path | Important body fields |
+|---|---|---|
+| HP | `PUT /character/v5/life/hp/damage-taken` | `characterId`, `removedHitPoints`, optional `temporaryHitPoints` |
+| Death saves | `PUT /character/v5/life/death-saves` | `characterId`, `failCount`, `successCount` |
+| Spell slots | `PUT /character/v5/spell/slots` | `characterId`, `level1` … `level9` |
+| Pact magic | `PUT /character/v5/spell/pact-magic` | `characterId`, the pact slot's `levelN` field |
+| Currency | `PUT /character/v5/inventory/currency/{copper|silver|electrum|gold|platinum}` | `characterId`, `amount` |
+| Inspiration | `PUT /character/v5/character/inspiration` | `characterId`, `inspiration` |
+| Conditions | `PUT`/`DELETE /character/v5/condition` | `characterId`, condition `id`; add also sends `level` and `totalHp` |
+| Limited use | `PUT /character/v5/action/limited-use` | `characterId`, action `id`, `entityTypeId`, `uses` |
+| Short rest | `POST /character/v5/character/rest/short` | `characterId`, `classHitDiceUsed`, `resetMaxHpModifier: false` |
+| Long rest | `POST /character/v5/character/rest/long` | `characterId`, `resetMaxHpModifier: true`, `adjustConditionLevel: false` |
+
+### Compendium data
+
+Game-data collection calls use `sharingSetting=2` and accept an optional
+`campaignId`. Campaign scope is essential when content sharing grants access.
+Class features are embedded in `game-data/classes`; racial traits are embedded in
+`game-data/races`. The former `game-data/class-feature/collection` assumption is
+not valid, and `racial-trait/collection` is not a flat array.
+
+The API contains both 2014 and 2024 definitions with duplicate names. Consumers
+must key by definition identity and deliberately prefer current rules when a
+single result is requested. Monster results with `accessType: 4` are restricted
+stubs and must not be rendered as AC 0 / HP 0 stat blocks.
+
+### Current condition IDs
+
+`1` Blinded, `2` Charmed, `3` Deafened, `4` Exhaustion, `5` Frightened,
+`6` Grappled, `7` Incapacitated, `8` Invisible, `9` Paralyzed, `10` Petrified,
+`11` Poisoned, `12` Prone, `13` Restrained, `14` Stunned, `15` Unconscious.
+
+---
+
 ## Service Domains
 
 | Service | Base URL | Auth Required |

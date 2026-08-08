@@ -156,8 +156,8 @@ describe("updateSpellSlots", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/123/spell/slots"),
-      { level: 3, used: 2 },
+      expect.stringContaining("/character/v5/spell/slots"),
+      { characterId: 123, level3: 2 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Updated level 3 spell slots to 2 used");
@@ -202,6 +202,7 @@ describe("updateDeathSaves", () => {
 
   beforeEach(() => {
     mockClient = {
+      get: vi.fn().mockResolvedValue(mockCharacter),
       put: vi.fn().mockResolvedValue({}),
     } as unknown as DdbClient;
   });
@@ -214,8 +215,8 @@ describe("updateDeathSaves", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/123/life/death-saves"),
-      { successCount: 2 },
+      expect.stringContaining("/character/v5/life/death-saves"),
+      { characterId: 123, failCount: 0, successCount: 2 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Updated death saves: 2 successes");
@@ -229,8 +230,8 @@ describe("updateDeathSaves", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/123/life/death-saves"),
-      { failCount: 1 },
+      expect.stringContaining("/character/v5/life/death-saves"),
+      { characterId: 123, failCount: 1, successCount: 0 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Updated death saves: 1 failure");
@@ -287,8 +288,8 @@ describe("updateCurrency", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/123/inventory/currency"),
-      { gp: 150 },
+      expect.stringContaining("/character/v5/inventory/currency/gold"),
+      { characterId: 123, amount: 150 },
       ["character:123"]
     );
     expect(result.content[0].text).toContain("Set GP to 150");
@@ -306,7 +307,7 @@ describe("updateCurrency", () => {
 
       expect(mockClient.put).toHaveBeenCalledWith(
         expect.anything(),
-        { [currency]: 10 },
+        { characterId: 123, amount: 10 },
         ["character:123"]
       );
     }

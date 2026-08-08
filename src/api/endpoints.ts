@@ -2,6 +2,12 @@ export const DDB_CHARACTER_SERVICE = "https://character-service.dndbeyond.com";
 export const DDB_MONSTER_SERVICE = "https://monster-service.dndbeyond.com";
 export const DDB_WATERDEEP = "https://www.dndbeyond.com";
 
+function gameDataQuery(campaignId?: number): string {
+  const params = new URLSearchParams({ sharingSetting: "2" });
+  if (campaignId !== undefined) params.set("campaignId", String(campaignId));
+  return params.toString();
+}
+
 export const ENDPOINTS = {
   character: {
     get: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}?includeCustomItems=true`,
@@ -12,14 +18,12 @@ export const ENDPOINTS = {
     setInspiration: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/inspiration`,
     condition: () => `${DDB_CHARACTER_SERVICE}/character/v5/condition`,
     rest: {
-      short: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short?characterId=${characterId}`,
-      long: (characterId: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long?characterId=${characterId}`,
+      short: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/short`,
+      long: () => `${DDB_CHARACTER_SERVICE}/character/v5/character/rest/long`,
     },
-    // Deprecated v5 endpoints (return 404, kept for reference)
-    updateSpellSlots: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/spell/slots`,
-    updateDeathSaves: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/life/death-saves`,
-    updateCurrency: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/inventory/currency`,
-    updatePactMagic: (id: number) => `${DDB_CHARACTER_SERVICE}/character/v5/character/${id}/spell/pact-magic`,
+    updateSpellSlots: () => `${DDB_CHARACTER_SERVICE}/character/v5/spell/slots`,
+    updateDeathSaves: () => `${DDB_CHARACTER_SERVICE}/character/v5/life/death-saves`,
+    updatePactMagic: () => `${DDB_CHARACTER_SERVICE}/character/v5/spell/pact-magic`,
     builder: {
       standardBuild: () => `${DDB_CHARACTER_SERVICE}/character/v5/builder/standard-build`,
       quickBuild: () => `${DDB_CHARACTER_SERVICE}/character/v5/builder/quick-build`,
@@ -45,25 +49,28 @@ export const ENDPOINTS = {
     inventory: {
       addItems: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/item`,
       setGold: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency/gold`,
+      setCurrency: (currency: "cp" | "sp" | "ep" | "gp" | "pp") => {
+        const names = { cp: "copper", sp: "silver", ep: "electrum", gp: "gold", pp: "platinum" } as const;
+        return `${DDB_CHARACTER_SERVICE}/character/v5/inventory/currency/${names[currency]}`;
+      },
       setStartingType: () => `${DDB_CHARACTER_SERVICE}/character/v5/inventory/starting-type`,
     },
     delete: () => `${DDB_CHARACTER_SERVICE}/character/v5/character`,
   },
   gameData: {
     items: (campaignId?: number) => {
-      const campaign = campaignId ? `&campaignId=${campaignId}` : "";
-      return `${DDB_CHARACTER_SERVICE}/character/v5/game-data/items?sharingSetting=2${campaign}`;
+      return `${DDB_CHARACTER_SERVICE}/character/v5/game-data/items?${gameDataQuery(campaignId)}`;
     },
-    feats: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/feats`,
-    classes: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/classes`,
-    races: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/races`,
-    backgrounds: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/backgrounds`,
-    alwaysKnownSpells: (classId: number, classLevel: number = 20) =>
-      `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-known-spells?classId=${classId}&classLevel=${classLevel}&sharingSetting=2`,
-    alwaysPreparedSpells: (classId: number, classLevel: number = 20) =>
-      `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-prepared-spells?classId=${classId}&classLevel=${classLevel}&sharingSetting=2`,
-    classFeatureCollection: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/class-feature/collection`,
-    racialTraitCollection: () => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/racial-trait/collection`,
+    feats: (campaignId?: number) => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/feats?${gameDataQuery(campaignId)}`,
+    classes: (campaignId?: number) => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/classes?${gameDataQuery(campaignId)}`,
+    races: (campaignId?: number) => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/races?${gameDataQuery(campaignId)}`,
+    backgrounds: (campaignId?: number) => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/backgrounds?${gameDataQuery(campaignId)}`,
+    alwaysKnownSpells: (classId: number, classLevel: number = 20, campaignId?: number) =>
+      `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-known-spells?classId=${classId}&classLevel=${classLevel}&${gameDataQuery(campaignId)}`,
+    alwaysPreparedSpells: (classId: number, classLevel: number = 20, campaignId?: number) =>
+      `${DDB_CHARACTER_SERVICE}/character/v5/game-data/always-prepared-spells?classId=${classId}&classLevel=${classLevel}&${gameDataQuery(campaignId)}`,
+    classFeatureCollection: (campaignId?: number) => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/class-feature/collection?${gameDataQuery(campaignId)}`,
+    racialTraitCollection: (campaignId?: number) => `${DDB_CHARACTER_SERVICE}/character/v5/game-data/racial-trait/collection?${gameDataQuery(campaignId)}`,
   },
   monster: {
     search: (search: string = "", skip: number = 0, take: number = 20, showHomebrew?: boolean, sources?: string) => {

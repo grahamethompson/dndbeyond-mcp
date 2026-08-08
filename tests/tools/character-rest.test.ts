@@ -7,10 +7,7 @@ describe("longRest", () => {
 
   beforeEach(() => {
     mockClient = {
-      get: vi.fn().mockResolvedValue({}),
-      getRaw: vi.fn(),
-      put: vi.fn(),
-      invalidateCache: vi.fn(),
+      post: vi.fn().mockResolvedValue({}),
     } as unknown as DdbClient;
   });
 
@@ -21,14 +18,11 @@ describe("longRest", () => {
     expect(result.content[0].text).toContain("HP, spell slots, and long-rest abilities have been restored");
 
     // Should call the server-side rest endpoint
-    expect(mockClient.get).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/rest/long?characterId=123"),
-      expect.any(String),
-      0
+    expect(mockClient.post).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5/character/rest/long"),
+      { characterId: 123, resetMaxHpModifier: true, adjustConditionLevel: false },
+      ["character:123"]
     );
-
-    // Should invalidate character cache
-    expect(mockClient.invalidateCache).toHaveBeenCalledWith("character:123");
   });
 });
 
@@ -37,10 +31,8 @@ describe("shortRest", () => {
 
   beforeEach(() => {
     mockClient = {
-      get: vi.fn().mockResolvedValue({}),
-      getRaw: vi.fn(),
-      put: vi.fn(),
-      invalidateCache: vi.fn(),
+      get: vi.fn().mockResolvedValue({ classes: [{ id: 77, hitDiceUsed: 2 }] }),
+      post: vi.fn().mockResolvedValue({}),
     } as unknown as DdbClient;
   });
 
@@ -51,13 +43,10 @@ describe("shortRest", () => {
     expect(result.content[0].text).toContain("Pact magic and short-rest abilities have been restored");
 
     // Should call the server-side rest endpoint
-    expect(mockClient.get).toHaveBeenCalledWith(
-      expect.stringContaining("/character/v5/character/rest/short?characterId=123"),
-      expect.any(String),
-      0
+    expect(mockClient.post).toHaveBeenCalledWith(
+      expect.stringContaining("/character/v5/character/rest/short"),
+      { characterId: 123, classHitDiceUsed: { 77: 2 }, resetMaxHpModifier: false },
+      ["character:123"]
     );
-
-    // Should invalidate character cache
-    expect(mockClient.invalidateCache).toHaveBeenCalledWith("character:123");
   });
 });

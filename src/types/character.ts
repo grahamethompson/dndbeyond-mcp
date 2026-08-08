@@ -18,6 +18,11 @@ export interface DdbCharacter {
   lifestyleId: number;
   currencies: DdbCurrencies;
   spells: DdbSpellsContainer;
+  classSpells?: Array<{
+    entityTypeId: number;
+    characterClassId: number;
+    spells: DdbSpell[];
+  }>;
   inventory: DdbInventoryItem[];
   deathSaves: DdbDeathSaves;
   traits: DdbTraits;
@@ -47,6 +52,9 @@ export interface DdbRace {
   baseRaceName: string;
   isHomebrew: boolean;
   racialTraits: DdbRacialTrait[];
+  weightSpeeds?: {
+    normal?: { walk?: number; fly?: number; burrow?: number; swim?: number; climb?: number };
+  };
 }
 
 export interface DdbClass {
@@ -56,10 +64,13 @@ export interface DdbClass {
   level: number;
   isStartingClass: boolean;
   classFeatures: DdbClassFeature[];
+  hitDiceUsed?: number;
 }
 
 export interface DdbBackground {
   definition: {
+    id?: number;
+    definitionKey?: string;
     name: string;
     description: string;
     featureName: string | null;
@@ -95,6 +106,8 @@ export interface DdbSpellsContainer {
 export interface DdbSpell {
   id: number;
   definition: {
+    id?: number;
+    definitionKey?: string;
     name: string;
     level: number;
     school: string;
@@ -118,6 +131,8 @@ export interface DdbSpell {
     componentsDescription: string | null;
     concentration: boolean;
     ritual: boolean;
+    isLegacy?: boolean;
+    sources?: Array<{ sourceId: number; pageNumber?: number | null; sourceType?: number }>;
   };
   prepared: boolean;
   alwaysPrepared: boolean;
@@ -136,6 +151,8 @@ export interface DdbInventoryItem {
     isHomebrew: boolean;
     armorClass?: number | null;
     filterType?: string;
+    armorTypeId?: number | null;
+    baseArmorName?: string | null;
   };
   equipped: boolean;
   quantity: number;
@@ -158,7 +175,7 @@ export interface DdbTraits {
 export interface DdbLimitedUse {
   maxUses: number;
   numberUsed: number;
-  resetType: number; // 1 = Long Rest, 2 = Short Rest
+  resetType: number; // 1 = Short Rest, 2 = Long Rest, 3 = Dawn, 4 = Other
   resetTypeDescription: string;
 }
 

@@ -55,6 +55,21 @@ describe("computeFinalAbilityScore", () => {
     expect(result).toBe(18); // 15 + 2 + 1
   });
 
+  it("should honor an item that sets an ability score", () => {
+    const modifiers = {
+      race: [],
+      class: [],
+      background: [],
+      item: [
+        { type: "set", subType: "strength-score", value: 21 } as DdbModifier,
+      ],
+      feat: [],
+      condition: [],
+    };
+
+    expect(computeFinalAbilityScore(baseStats, [], [], modifiers, 1)).toBe(21);
+  });
+
   it("should handle missing bonus stat", () => {
     const bonusStats: any[] = [];
     const overrideStats: any[] = [];
@@ -299,6 +314,41 @@ describe("calculateAc", () => {
 
     const result = calculateAc(charWithShield);
     expect(result).toBe(14); // 10 + 2 (DEX) + 2 (shield)
+  });
+
+  it("should use D&D Beyond armorTypeId when display type fields are empty", () => {
+    const character = {
+      ...baseChar,
+      inventory: [
+        {
+          id: 1,
+          definition: {
+            name: "Half Plate",
+            type: "",
+            filterType: "Armor",
+            armorTypeId: 2,
+            armorClass: 15,
+          },
+          equipped: true,
+          quantity: 1,
+        },
+        {
+          id: 2,
+          definition: {
+            name: "Sentinel Shield",
+            type: null,
+            filterType: "Armor",
+            baseArmorName: "Shield",
+            armorTypeId: 4,
+            armorClass: 2,
+          },
+          equipped: true,
+          quantity: 1,
+        },
+      ],
+    } as unknown as DdbCharacter;
+
+    expect(calculateAc(character)).toBe(19); // 15 + 2 DEX + 2 shield
   });
 
   it("should calculate Barbarian unarmored defense (10 + DEX + CON)", () => {

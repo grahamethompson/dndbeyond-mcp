@@ -1,5 +1,10 @@
 # D&D Beyond MCP Server — Feature Audit
 
+> **Historical document.** This February 2026 audit is retained for context but
+> does not describe the current API contract. The endpoint and data-shape repair
+> completed on 2026-08-08 supersedes its deprecation conclusions. See
+> `docs/api-research.md` for the current verified contract.
+
 **Date:** 2026-02-14
 **Build:** Passes clean (TypeScript strict mode, no warnings)
 **Tests:** 190/190 passing across 18 test files

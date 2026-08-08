@@ -154,6 +154,26 @@ describe("getCondition", () => {
     } as unknown as DdbClient;
   });
 
+  it("shouldReturnCurrentExhaustionRulesWithoutTheBundledLegacyBlock", async () => {
+    vi.mocked(mockClient.getRaw).mockResolvedValue({
+      challengeRatings: [], monsterTypes: [], environments: [], alignments: [], damageTypes: [], senses: [],
+      conditions: [{
+        definition: {
+          id: 4,
+          name: "Exhaustion",
+          slug: "exhaustion",
+          description: "D20 Tests are reduced by 2 times your level. Legacy Definition Speed halved.",
+          levels: [{ definition: { id: 1, level: 1, effect: "-2 to D20 Tests. | Legacy: Disadvantage on ability checks" } }],
+        },
+      }],
+    });
+
+    const result = await getCondition(mockClient, { conditionName: "Exhaustion" });
+    expect(result.content[0].text).toContain("-2 to D20 Tests");
+    expect(result.content[0].text).not.toContain("Legacy");
+    expect(result.content[0].text).not.toContain("Speed halved");
+  });
+
   it("shouldReturnNotFoundMessageWhenConditionDoesNotExist", async () => {
     const result = await getCondition(mockClient, { conditionName: "Nonexistent Condition" });
 

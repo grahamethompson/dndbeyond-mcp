@@ -7,7 +7,7 @@ describe("updatePactMagic", () => {
 
   beforeEach(() => {
     mockClient = {
-      get: vi.fn(),
+      get: vi.fn().mockResolvedValue({ pactMagic: { level: 3, used: 0, available: 2 } }),
       getRaw: vi.fn(),
       put: vi.fn(),
     };
@@ -20,8 +20,8 @@ describe("updatePactMagic", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      "https://character-service.dndbeyond.com/character/v5/character/123/spell/pact-magic",
-      { used: 1 },
+      "https://character-service.dndbeyond.com/character/v5/spell/pact-magic",
+      { characterId: 123, level3: 1 },
       ["character:123"]
     );
 
@@ -45,8 +45,8 @@ describe("updatePactMagic", () => {
     });
 
     expect(mockClient.put).toHaveBeenCalledWith(
-      "https://character-service.dndbeyond.com/character/v5/character/123/spell/pact-magic",
-      { used: 0 },
+      "https://character-service.dndbeyond.com/character/v5/spell/pact-magic",
+      { characterId: 123, level3: 0 },
       ["character:123"]
     );
 

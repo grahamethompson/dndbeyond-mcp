@@ -11,7 +11,8 @@ import type {
   DdbRacialTrait,
   DdbInventoryItem,
 } from "../types/character.js";
-import type { DdbCampaign, DdbCampaignCharacter2 } from "../types/api.js";
+import type { DdbCharacterListData, DdbCharacterListItem } from "../types/api.js";
+import { getUserId } from "../api/auth.js";
 import { fuzzyMatch, levenshteinDistance } from "../utils/fuzzy-match.js";
 import { ABILITY_NAMES, ABILITY_SUBTYPE_MAP, calculateAbilityModifier, sumModifierBonuses, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
 
@@ -95,13 +96,22 @@ function formatInventory(char: DdbCharacter): string {
 // ============================================================================
 
 function getAllSpells(char: DdbCharacter): DdbSpell[] {
-  return [
+  const spells = [
     ...(char.spells.class ?? []),
     ...(char.spells.race ?? []),
     ...(char.spells.background ?? []),
     ...(char.spells.item ?? []),
     ...(char.spells.feat ?? []),
+    ...(char.classSpells ?? []).flatMap((entry) => entry.spells ?? []),
   ];
+
+  const seen = new Set<string>();
+  return spells.filter((spell) => {
+    const key = String(spell.definition?.id ?? spell.definition?.definitionKey ?? `${spell.definition?.name}:${spell.id}`);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function stripHtml(s: string | null | undefined): string {
@@ -371,7 +381,13 @@ function formatLimitedUseResources(char: DdbCharacter): string {
         const used = action.limitedUse.numberUsed;
         const max = action.limitedUse.maxUses;
         const remaining = max - used;
-        const reset = action.limitedUse.resetTypeDescription || "unknown";
+        const resetNames: Record<number, string> = {
+          1: "Short Rest",
+          2: "Long Rest",
+          3: "Dawn",
+          4: "Other",
+        };
+        const reset = action.limitedUse.resetTypeDescription || resetNames[action.limitedUse.resetType] || "Other";
         resources.push(`  ${action.name}: ${remaining}/${max} (${reset})`);
       }
     }
@@ -432,8 +448,7 @@ function formatRacialTraitNames(char: DdbCharacter): string {
 }
 
 function formatSpeed(char: DdbCharacter): string {
-  // Base walking speed for most races is 30 ft
-  let baseSpeed = 30;
+  const baseSpeed = char.race.weightSpeeds?.normal?.walk ?? 30;
 
   // Check modifiers for speed bonuses
   let speedBonus = sumModifierBonuses(char.modifiers, "speed");
@@ -918,26 +933,22 @@ function formatCharacter(char: DdbCharacter): string {
   return sections.join("\n");
 }
 
-async function findCharacterByName(client: DdbClient, name: string): Promise<number | null> {
-  const campaignsResponse = await client.get<DdbCampaign[]>(
-    ENDPOINTS.campaign.list(),
-    "campaigns",
+async function getOwnedCharacters(client: DdbClient): Promise<DdbCharacterListItem[]> {
+  const userId = await getUserId();
+  if (userId === null) {
+    throw new Error("Unable to determine the authenticated D&D Beyond user ID. Run setup_auth again.");
+  }
+
+  const result = await client.get<DdbCharacterListData>(
+    ENDPOINTS.character.list(userId),
+    `user:${userId}:characters`,
     300_000
   );
+  return result.characters ?? [];
+}
 
-  // Fetch characters from each campaign using the new endpoint
-  const allCharacters: Array<{ id: number; name: string }> = [];
-  for (const campaign of campaignsResponse) {
-    const characters = await client.get<DdbCampaignCharacter2[]>(
-      ENDPOINTS.campaign.characters(campaign.id),
-      `campaign:${campaign.id}:characters`,
-      300_000
-    );
-    allCharacters.push(...characters.map((char) => ({
-      id: char.id,
-      name: char.name,
-    })));
-  }
+async function findCharacterByName(client: DdbClient, name: string): Promise<number | null> {
+  const allCharacters = await getOwnedCharacters(client);
 
   // 1. Exact match (case-insensitive)
   const exactMatch = allCharacters.find(
@@ -1010,26 +1021,7 @@ export async function getCharacter(
 export async function listCharacters(
   client: DdbClient
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-  const campaignsResponse = await client.get<DdbCampaign[]>(
-    ENDPOINTS.campaign.list(),
-    "campaigns",
-    300_000
-  );
-
-  // Fetch characters from each campaign using the characters endpoint
-  const allCharacters: Array<{ id: number; name: string; campaignName: string }> = [];
-  for (const campaign of campaignsResponse) {
-    const characters = await client.get<DdbCampaignCharacter2[]>(
-      ENDPOINTS.campaign.characters(campaign.id),
-      `campaign:${campaign.id}:characters`,
-      300_000
-    );
-    allCharacters.push(...characters.map((char) => ({
-      id: char.id,
-      name: char.name,
-      campaignName: campaign.name,
-    })));
-  }
+  const allCharacters = await getOwnedCharacters(client);
 
   if (allCharacters.length === 0) {
     return {
@@ -1042,26 +1034,11 @@ export async function listCharacters(
     };
   }
 
-  const characterDetails = await Promise.all(
-    allCharacters.map(async (char) => {
-      const details = await client.get<DdbCharacter>(
-        ENDPOINTS.character.get(char.id),
-        `character:${char.id}`,
-        60_000
-      );
-      return {
-        name: details.name,
-        race: details.race.fullName,
-        classes: formatClasses(details),
-        level: computeLevel(details),
-        campaign: char.campaignName,
-      };
-    })
-  );
-
-  const lines = characterDetails.map(
-    (char) =>
-      `${char.name} - ${char.race} ${char.classes} (Level ${char.level}) - ${char.campaign}`
+  const lines = allCharacters.map(
+    (char) => {
+      const campaign = char.campaignName ?? "No campaign";
+      return `${char.name} [ID: ${char.id}] - ${char.raceName} ${char.classDescription} (Level ${char.level}) - ${campaign}`;
+    }
   );
 
   return {
@@ -1202,10 +1179,10 @@ interface AddConditionParams {
 }
 
 const CONDITION_NAMES: Record<number, string> = {
-  1: "Blinded", 2: "Charmed", 3: "Deafened", 4: "Frightened",
-  5: "Grappled", 6: "Incapacitated", 7: "Invisible", 8: "Paralyzed",
-  9: "Petrified", 10: "Poisoned", 11: "Prone", 12: "Restrained",
-  13: "Stunned", 14: "Unconscious", 15: "Exhaustion",
+  1: "Blinded", 2: "Charmed", 3: "Deafened", 4: "Exhaustion",
+  5: "Frightened", 6: "Grappled", 7: "Incapacitated", 8: "Invisible",
+  9: "Paralyzed", 10: "Petrified", 11: "Poisoned", 12: "Prone",
+  13: "Restrained", 14: "Stunned", 15: "Unconscious",
 };
 
 export async function addCondition(
@@ -1288,8 +1265,8 @@ export async function updateSpellSlots(
 
   try {
     await client.put(
-      ENDPOINTS.character.updateSpellSlots(params.characterId),
-      { level: params.level, used: params.used },
+      ENDPOINTS.character.updateSpellSlots(),
+      { characterId: params.characterId, [`level${params.level}`]: params.used },
       [`character:${params.characterId}`]
     );
 
@@ -1307,7 +1284,7 @@ export async function updateSpellSlots(
         content: [
           {
             type: "text",
-            text: `⚠️  Spell slot updates are temporarily unavailable.\n\nD&D Beyond has deprecated the v5 character write API endpoints. This feature cannot be used until D&D Beyond provides replacement endpoints.\n\nCharacter ID: ${params.characterId}\nRead operations still work normally.`,
+            text: `D&D Beyond returned 404 for the current spell-slot endpoint. The API contract may have changed again; no update was applied to character ${params.characterId}.`,
           },
         ],
       };
@@ -1348,14 +1325,20 @@ export async function updateDeathSaves(
     };
   }
 
-  const body =
-    params.type === "success"
-      ? { successCount: params.count }
-      : { failCount: params.count };
+  const character = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(params.characterId),
+    `character:${params.characterId}`,
+    60_000
+  );
+  const body = {
+    characterId: params.characterId,
+    failCount: params.type === "failure" ? params.count : (character.deathSaves.failCount ?? 0),
+    successCount: params.type === "success" ? params.count : (character.deathSaves.successCount ?? 0),
+  };
 
   try {
     await client.put(
-      ENDPOINTS.character.updateDeathSaves(params.characterId),
+      ENDPOINTS.character.updateDeathSaves(),
       body,
       [`character:${params.characterId}`]
     );
@@ -1374,7 +1357,7 @@ export async function updateDeathSaves(
         content: [
           {
             type: "text",
-            text: `⚠️  Death save updates are temporarily unavailable.\n\nD&D Beyond has deprecated the v5 character write API endpoints. This feature cannot be used until D&D Beyond provides replacement endpoints.\n\nCharacter ID: ${params.characterId}\nRead operations still work normally.`,
+            text: `D&D Beyond returned 404 for the current death-save endpoint. The API contract may have changed again; no update was applied to character ${params.characterId}.`,
           },
         ],
       };
@@ -1437,8 +1420,8 @@ export async function updateCurrency(
 
   try {
     await client.put(
-      ENDPOINTS.character.updateCurrency(params.characterId),
-      { [params.currency]: finalAmount },
+      ENDPOINTS.character.inventory.setCurrency(params.currency),
+      { characterId: params.characterId, amount: finalAmount },
       [`character:${params.characterId}`]
     );
 
@@ -1451,7 +1434,7 @@ export async function updateCurrency(
         content: [
           {
             type: "text",
-            text: `⚠️  Currency updates are temporarily unavailable.\n\nD&D Beyond has deprecated the v5 character write API endpoints. This feature cannot be used until D&D Beyond provides replacement endpoints.\n\nCharacter ID: ${params.characterId}\nRead operations still work normally.`,
+            text: `D&D Beyond returned 404 for the current currency endpoint. The API contract may have changed again; no update was applied to character ${params.characterId}.`,
           },
         ],
       };
@@ -1495,9 +1478,19 @@ export async function updatePactMagic(
   }
 
   try {
+    const character = await client.get<DdbCharacter>(
+      ENDPOINTS.character.get(params.characterId),
+      `character:${params.characterId}`,
+      60_000
+    );
+    const pactLevel = character.pactMagic?.level;
+    if (!pactLevel) {
+      return { content: [{ type: "text", text: "This character has no pact magic slots." }] };
+    }
+
     await client.put(
-      ENDPOINTS.character.updatePactMagic(params.characterId),
-      { used: params.used },
+      ENDPOINTS.character.updatePactMagic(),
+      { characterId: params.characterId, [`level${pactLevel}`]: params.used },
       [`character:${params.characterId}`]
     );
 
@@ -1515,7 +1508,7 @@ export async function updatePactMagic(
         content: [
           {
             type: "text",
-            text: `⚠️  Pact magic updates are temporarily unavailable.\n\nD&D Beyond has deprecated the v5 character write API endpoints. This feature cannot be used until D&D Beyond provides replacement endpoints.\n\nCharacter ID: ${params.characterId}\nRead operations still work normally.`,
+            text: `D&D Beyond returned 404 for the current pact-magic endpoint. The API contract may have changed again; no update was applied to character ${params.characterId}.`,
           },
         ],
       };
@@ -1530,12 +1523,15 @@ export async function longRest(
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
   // Server-side long rest handles all resets atomically:
   // HP, spell slots, pact magic, limited-use abilities, hit dice, death saves
-  await client.get<unknown>(
-    ENDPOINTS.character.rest.long(params.characterId),
-    `rest:long:${params.characterId}:${Date.now()}`,
-    0
+  await client.post<unknown>(
+    ENDPOINTS.character.rest.long(),
+    {
+      characterId: params.characterId,
+      resetMaxHpModifier: true,
+      adjustConditionLevel: false,
+    },
+    [`character:${params.characterId}`]
   );
-  client.invalidateCache(`character:${params.characterId}`);
 
   return {
     content: [
@@ -1552,12 +1548,23 @@ export async function shortRest(
   params: ShortRestParams
 ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
   // Server-side short rest handles pact magic, short-rest abilities, hit dice
-  await client.get<unknown>(
-    ENDPOINTS.character.rest.short(params.characterId),
-    `rest:short:${params.characterId}:${Date.now()}`,
-    0
+  const character = await client.get<DdbCharacter>(
+    ENDPOINTS.character.get(params.characterId),
+    `character:${params.characterId}`,
+    60_000
   );
-  client.invalidateCache(`character:${params.characterId}`);
+  const classHitDiceUsed = Object.fromEntries(
+    character.classes.map((cls) => [cls.id, cls.hitDiceUsed ?? 0])
+  );
+  await client.post<unknown>(
+    ENDPOINTS.character.rest.short(),
+    {
+      characterId: params.characterId,
+      classHitDiceUsed,
+      resetMaxHpModifier: false,
+    },
+    [`character:${params.characterId}`]
+  );
 
   return {
     content: [
@@ -1638,8 +1645,8 @@ export async function castSpell(
         };
       }
       await client.put(
-        ENDPOINTS.character.updatePactMagic(params.characterId),
-        { used: newUsed },
+        ENDPOINTS.character.updatePactMagic(),
+        { characterId: params.characterId, [`level${character.pactMagic!.level}`]: newUsed },
         [`character:${params.characterId}`]
       );
       return {
@@ -1660,8 +1667,8 @@ export async function castSpell(
         };
       }
       await client.put(
-        ENDPOINTS.character.updateSpellSlots(params.characterId),
-        { level: spellLevel, used: newUsed },
+        ENDPOINTS.character.updateSpellSlots(),
+        { characterId: params.characterId, [`level${spellLevel}`]: newUsed },
         [`character:${params.characterId}`]
       );
       return {
@@ -1674,8 +1681,8 @@ export async function castSpell(
 
     // No slot data available — just update the slot count
     await client.put(
-      ENDPOINTS.character.updateSpellSlots(params.characterId),
-      { level: spellLevel, used: 1 },
+      ENDPOINTS.character.updateSpellSlots(),
+      { characterId: params.characterId, [`level${spellLevel}`]: 1 },
       [`character:${params.characterId}`]
     );
     return {
@@ -1690,7 +1697,7 @@ export async function castSpell(
         content: [
           {
             type: "text",
-            text: `⚠️  Spell casting operations are temporarily unavailable.\n\nD&D Beyond has deprecated the v5 character write API endpoints. This feature cannot be used until D&D Beyond provides replacement endpoints.\n\nCharacter ID: ${params.characterId}\nRead operations still work normally.`,
+            text: `D&D Beyond returned 404 for the current spell-slot endpoint. The API contract may have changed again; no update was applied to character ${params.characterId}.`,
           },
         ],
       };

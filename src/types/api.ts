@@ -46,3 +46,23 @@ export interface DdbCampaignCharacter2 {
   characterStatus: number;
   isAssigned: boolean;
 }
+
+export interface DdbCharacterListItem {
+  id: number;
+  level: number;
+  name: string;
+  status: number;
+  statusSlug: string;
+  isAssigned: boolean;
+  classDescription: string;
+  raceName: string;
+  campaignId: number | null;
+  campaignName: string | null;
+  isReady: boolean;
+}
+
+export interface DdbCharacterListData {
+  characterSlotLimit: number;
+  canUnlockCharacters: boolean;
+  characters: DdbCharacterListItem[];
+}
