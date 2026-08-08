@@ -12,53 +12,105 @@ A TypeScript MCP (Model Context Protocol) server for D&D Beyond. Gives Claude (a
 - **Workflow Prompts** — Session prep, encounter building, level-up guidance, spell recommendations
 - **Browser-Based Auth** — Playwright-powered login flow (no manual cookie extraction)
 
-## Installation
+## Quick start
 
-You can run this server without installing via `npx`:
+### Requirements
 
-```bash
-npx dndbeyond-mcp
-```
+- Node.js 20 or newer
+- npm
+- Google Chrome, used for the interactive D&D Beyond login
+- A D&D Beyond account
 
-Or install globally:
-
-```bash
-npm install -g dndbeyond-mcp
-```
-
-## Setup
-
-Before using the server, authenticate with D&D Beyond:
+### 1. Clone, install, and build
 
 ```bash
-npx dndbeyond-mcp setup
+git clone git@github.com:grahamethompson/dndbeyond-mcp.git
+cd dndbeyond-mcp
+npm ci
+npm run build
 ```
 
-This opens a browser window where you log into D&D Beyond normally. The server captures your session cookie automatically and saves it to `~/.dndbeyond-mcp/config.json`.
+### 2. Authenticate with D&D Beyond
 
-## Claude Desktop Configuration
+```bash
+npm run setup
+```
 
-Add this to your Claude Desktop configuration file:
+A Chrome window opens at D&D Beyond. Log in normally and wait for the terminal
+to report that authentication succeeded. Credentials are stored locally in
+`~/.dndbeyond-mcp/config.json`.
+
+> Never commit or share `~/.dndbeyond-mcp/config.json`. Its session cookies can
+> access your D&D Beyond account.
+
+### 3. Connect Codex
+
+Add the server to `~/.codex/config.toml`, replacing the path with the absolute
+path to your clone:
+
+```toml
+[mcp_servers.dndbeyond]
+command = "node"
+args = ["/absolute/path/to/dndbeyond-mcp/build/src/index.js"]
+```
+
+Restart Codex after saving the configuration. To verify the connection without
+changing live character data, ask Codex:
+
+```text
+Use the D&D Beyond MCP to check authentication and list my characters.
+Do not modify any character data.
+```
+
+### 4. Rebuild after pulling or editing
+
+```bash
+npm ci
+npm run build
+npm test
+```
+
+Restart or reconnect the MCP server so its Node.js process loads the new build.
+
+## Other installation options
+
+### Run the npm package
+
+An MCP client can launch the published package with `npx`. Authenticate after
+connecting by invoking the `setup_auth` MCP tool.
+
+```toml
+[mcp_servers.dndbeyond]
+command = "npx"
+args = ["-y", "dndbeyond-mcp"]
+```
+
+### Claude Desktop
+
+Add the locally built server to the Claude Desktop configuration, replacing the
+path with the absolute path to your clone.
 
 **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+
 **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "dndbeyond": {
-      "command": "npx",
-      "args": ["-y", "dndbeyond-mcp"]
+      "command": "node",
+      "args": ["/absolute/path/to/dndbeyond-mcp/build/src/index.js"]
     }
   }
 }
 ```
 
-After adding the configuration, restart Claude Desktop.
+Restart Claude Desktop after saving the configuration.
 
 ## Tools
 
 ### Character
+
 - `get_character` — Full character sheet by ID or name
 - `list_characters` — All your characters
 - `update_hp` — Apply damage or healing
@@ -68,10 +120,12 @@ After adding the configuration, restart Claude Desktop.
 - `use_ability` — Decrement limited-use features
 
 ### Campaign
+
 - `list_campaigns` — Your active campaigns
 - `get_campaign_characters` — All characters in a campaign
 
 ### Reference
+
 - `search_spells` / `get_spell` — Spell lookup with filters
 - `search_monsters` / `get_monster` — Monster stat blocks
 - `search_items` / `get_item` — Magic item catalog
@@ -80,6 +134,7 @@ After adding the configuration, restart Claude Desktop.
 - `search_classes` — Class/subclass info
 
 ### Utility
+
 - `setup_auth` — Re-run login flow
 - `check_auth` — Verify session is valid
 
