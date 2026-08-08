@@ -25,63 +25,9 @@ This project is a fork of [AlexWorland/dndbeyond-mcp](https://github.com/AlexWor
 - Google Chrome, used for the interactive D&D Beyond login
 - A D&D Beyond account
 
-### 1. Clone, install, and build
+### 1. Connect Codex with `npx`
 
-```bash
-git clone git@github.com:grahamethompson/dndbeyond-mcp.git
-cd dndbeyond-mcp
-npm ci
-npm run build
-```
-
-### 2. Authenticate with D&D Beyond
-
-```bash
-npm run setup
-```
-
-A Chrome window opens at D&D Beyond. Log in normally and wait for the terminal
-to report that authentication succeeded. Credentials are stored locally in
-`~/.dndbeyond-mcp/config.json`.
-
-> Never commit or share `~/.dndbeyond-mcp/config.json`. Its session cookies can
-> access your D&D Beyond account.
-
-### 3. Connect Codex
-
-Add the server to `~/.codex/config.toml`, replacing the path with the absolute
-path to your clone:
-
-```toml
-[mcp_servers.dndbeyond]
-command = "node"
-args = ["/absolute/path/to/dndbeyond-mcp/build/src/index.js"]
-```
-
-Restart Codex after saving the configuration. To verify the connection without
-changing live character data, ask Codex:
-
-```text
-Use the D&D Beyond MCP to check authentication and list my characters.
-Do not modify any character data.
-```
-
-### 4. Rebuild after pulling or editing
-
-```bash
-npm ci
-npm run build
-npm test
-```
-
-Restart or reconnect the MCP server so its Node.js process loads the new build.
-
-## Other installation options
-
-### Run the npm package
-
-An MCP client can launch the published package with `npx`. Authenticate after
-connecting by invoking the `setup_auth` MCP tool.
+Add the published package to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.dndbeyond]
@@ -89,10 +35,64 @@ command = "npx"
 args = ["-y", "@grahamethompson/dndbeyond-mcp"]
 ```
 
+`npx` downloads and runs the latest published version automatically, so you do
+not need to clone or build the repository. Restart Codex after saving the
+configuration.
+
+### 2. Authenticate with D&D Beyond
+
+Ask Codex:
+
+```text
+Use the D&D Beyond MCP setup_auth tool to authenticate my account.
+```
+
+A Chrome window opens at D&D Beyond. Log in normally and wait for the MCP tool
+to report that authentication succeeded. Credentials are stored locally in
+`~/.dndbeyond-mcp/config.json`.
+
+> Never commit or share `~/.dndbeyond-mcp/config.json`. Its session cookies can
+> access your D&D Beyond account.
+
+### 3. Verify the connection
+
+To verify the connection without changing live character data, ask Codex:
+
+```text
+Use the D&D Beyond MCP to check authentication and list my characters.
+Do not modify any character data.
+```
+
+## Other installation options
+
+### Install from source
+
+Clone and build the repository if you want to develop or inspect the server
+locally:
+
+```bash
+git clone git@github.com:grahamethompson/dndbeyond-mcp.git
+cd dndbeyond-mcp
+npm ci
+npm run build
+npm run setup
+```
+
+Then point Codex at the local build, replacing the path with the absolute path
+to your clone:
+
+```toml
+[mcp_servers.dndbeyond]
+command = "node"
+args = ["/absolute/path/to/dndbeyond-mcp/build/src/index.js"]
+```
+
+After pulling or editing the source, run `npm ci`, `npm run build`, and
+`npm test`, then restart or reconnect the MCP server.
+
 ### Claude Desktop
 
-Add the locally built server to the Claude Desktop configuration, replacing the
-path with the absolute path to your clone.
+Add the published package to the Claude Desktop configuration:
 
 **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 
@@ -102,8 +102,8 @@ path with the absolute path to your clone.
 {
   "mcpServers": {
     "dndbeyond": {
-      "command": "node",
-      "args": ["/absolute/path/to/dndbeyond-mcp/build/src/index.js"]
+      "command": "npx",
+      "args": ["-y", "@grahamethompson/dndbeyond-mcp"]
     }
   }
 }
