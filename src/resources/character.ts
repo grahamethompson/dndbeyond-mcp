@@ -5,6 +5,7 @@ import type { DdbCharacter } from "../types/character.js";
 import type { DdbCampaign, DdbCampaignCharacter2 } from "../types/api.js";
 import { HttpError } from "../resilience/index.js";
 import { ABILITY_NAMES, calculateAbilityModifier, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
+import { getPreparedOrKnownSpells } from "../utils/character-spells.js";
 
 function formatAbilityScores(char: DdbCharacter): string {
   return ABILITY_NAMES.map((name, idx) => {
@@ -51,17 +52,9 @@ function formatCharacter(char: DdbCharacter): string {
 }
 
 function formatSpellList(char: DdbCharacter): string {
-  const allSpells = [
-    ...(char.spells.class ?? []),
-    ...(char.spells.race ?? []),
-    ...(char.spells.background ?? []),
-    ...(char.spells.item ?? []),
-    ...(char.spells.feat ?? []),
-  ];
+  const prepared = getPreparedOrKnownSpells(char);
+  if (prepared.length === 0) return "No prepared or known spells available.";
 
-  if (allSpells.length === 0) return "No spells available.";
-
-  const prepared = allSpells.filter((s) => s.prepared || s.alwaysPrepared);
   const preparedByLevel = prepared.reduce((acc, spell) => {
     const level = spell.definition.level;
     if (!acc[level]) acc[level] = [];

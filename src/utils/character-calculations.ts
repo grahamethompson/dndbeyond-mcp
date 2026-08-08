@@ -80,10 +80,34 @@ export function computeLevel(char: DdbCharacter): number {
 }
 
 export function calculateMaxHp(char: DdbCharacter): number {
+  const override = char.overrideHitPoints;
+  if (override !== null && override !== undefined) return override;
+
   const base = char.baseHitPoints;
   const bonus = char.bonusHitPoints ?? 0;
-  const override = char.overrideHitPoints;
-  return override ?? (base + bonus);
+  const level = Array.isArray(char.classes) ? computeLevel(char) : 0;
+  const modifiers = char.modifiers ?? {};
+
+  // Character-service v5 returns baseHitPoints before Constitution. D&D
+  // Beyond applies the current Constitution modifier once per character level.
+  const constitutionModifier = level > 0
+    ? Math.floor((computeFinalAbilityScore(
+      char.stats ?? [],
+      char.bonusStats ?? [],
+      char.overrideStats ?? [],
+      modifiers,
+      3
+    ) - 10) / 2)
+    : 0;
+
+  const flatModifierBonus = sumModifierBonuses(modifiers, "hit-points");
+  const perLevelModifierBonus = sumModifierBonuses(modifiers, "hit-points-per-level") * level;
+
+  return base
+    + bonus
+    + (constitutionModifier * level)
+    + flatModifierBonus
+    + perLevelModifierBonus;
 }
 
 export function calculateCurrentHp(char: DdbCharacter): number {
@@ -138,17 +162,46 @@ export function calculateAc(char: DdbCharacter): number {
   // Apply DEX modifier based on armor type
   let finalAc = baseAc;
   if (armorType === "none") {
-    // Check for unarmored defense
+    // Multiple AC calculations do not stack. Build every available unarmored
+    // formula and use the highest result, matching D&D Beyond's sheet.
+    const candidates = [10 + dexMod];
     const isBarbarian = char.classes.some(cls => cls.definition.name === "Barbarian");
     const isMonk = char.classes.some(cls => cls.definition.name === "Monk");
 
     if (isBarbarian) {
-      finalAc = 10 + dexMod + conMod;
-    } else if (isMonk) {
-      finalAc = 10 + dexMod + wisMod;
-    } else {
-      finalAc = 10 + dexMod;
+      candidates.push(10 + dexMod + conMod);
     }
+    if (isMonk) {
+      candidates.push(10 + dexMod + wisMod);
+    }
+
+    const modifierLists = Object.values(char.modifiers ?? {}).filter(Array.isArray);
+    const naturalArmorValues = modifierLists
+      .flat()
+      .filter((mod) => mod.type === "set" && mod.subType === "unarmored-armor-class" && mod.value != null)
+      .map((mod) => mod.value as number);
+
+    if (naturalArmorValues.length > 0) {
+      const ignoresDex = modifierLists
+        .flat()
+        .some((mod) => mod.type === "ignore" && mod.subType === "unarmored-dex-ac-bonus");
+      const maxDexValues = modifierLists
+        .flat()
+        .filter((mod) => mod.type === "set" && mod.subType === "ac-max-dex-modifier" && mod.value != null)
+        .map((mod) => mod.value as number);
+      const maxDex = maxDexValues.length > 0 ? Math.min(...maxDexValues) : undefined;
+      const naturalDex = ignoresDex
+        ? 0
+        : maxDex === undefined ? dexMod : Math.min(dexMod, maxDex);
+
+      for (const value of naturalArmorValues) {
+        // D&D Beyond represents natural AC as the amount above the standard
+        // base of 10. Tortle Natural Armor therefore arrives as `set: 7`.
+        candidates.push(10 + value + naturalDex);
+      }
+    }
+
+    finalAc = Math.max(...candidates);
   } else if (armorType === "light") {
     finalAc = baseAc + dexMod;
   } else if (armorType === "medium") {
@@ -162,8 +215,9 @@ export function calculateAc(char: DdbCharacter): number {
 
   // Add AC modifiers from features/spells
   const acBonus = sumModifierBonuses(char.modifiers, "armor-class")
-    + sumModifierBonuses(char.modifiers, "armored-armor-class")
-    + sumModifierBonuses(char.modifiers, "unarmored-armor-class");
+    + (armorType === "none"
+      ? sumModifierBonuses(char.modifiers, "unarmored-armor-class")
+      : sumModifierBonuses(char.modifiers, "armored-armor-class"));
 
   finalAc += acBonus;
 

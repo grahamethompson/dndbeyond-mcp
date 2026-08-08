@@ -415,6 +415,28 @@ describe("calculateAc", () => {
     const result = calculateAc(charWithAcBonus);
     expect(result).toBe(13); // 10 + 2 (DEX) + 1 (feature)
   });
+
+  it("should apply D&D Beyond natural armor modifier instructions", () => {
+    const tortle = {
+      ...baseChar,
+      race: {
+        fullName: "Tortle",
+        baseRaceName: "Tortle",
+        isHomebrew: false,
+        racialTraits: [],
+      },
+      modifiers: {
+        ...baseChar.modifiers,
+        race: [
+          { type: "set", subType: "unarmored-armor-class", value: 7 } as DdbModifier,
+          { type: "set", subType: "ac-max-dex-modifier", value: 0 } as DdbModifier,
+          { type: "ignore", subType: "unarmored-dex-ac-bonus", value: null } as DdbModifier,
+        ],
+      },
+    } as unknown as DdbCharacter;
+
+    expect(calculateAc(tortle)).toBe(17);
+  });
 });
 
 describe("computeLevel", () => {
@@ -474,6 +496,45 @@ describe("calculateMaxHp", () => {
 
     const result = calculateMaxHp(char);
     expect(result).toBe(42);
+  });
+
+  it("should add the Constitution modifier for every character level", () => {
+    const char = {
+      baseHitPoints: 26,
+      bonusHitPoints: null,
+      overrideHitPoints: null,
+      classes: [{ level: 6 }],
+      stats: [{ id: 3, value: 14 }],
+      bonusStats: [],
+      overrideStats: [],
+      modifiers: {
+        feat: [
+          { type: "bonus", subType: "constitution-score", value: 1 },
+        ],
+      },
+    } as unknown as DdbCharacter;
+
+    expect(calculateMaxHp(char)).toBe(38); // 26 + (CON +2 × 6 levels)
+  });
+
+  it("should apply flat and per-level hit point modifiers", () => {
+    const char = {
+      baseHitPoints: 20,
+      bonusHitPoints: 1,
+      overrideHitPoints: null,
+      classes: [{ level: 4 }],
+      stats: [{ id: 3, value: 10 }],
+      bonusStats: [],
+      overrideStats: [],
+      modifiers: {
+        feat: [
+          { type: "bonus", subType: "hit-points", value: 3 },
+          { type: "bonus", subType: "hit-points-per-level", value: 2 },
+        ],
+      },
+    } as unknown as DdbCharacter;
+
+    expect(calculateMaxHp(char)).toBe(32); // 20 + 1 + 3 + (2 × 4)
   });
 });
 

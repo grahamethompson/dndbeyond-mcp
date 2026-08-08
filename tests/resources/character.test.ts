@@ -171,6 +171,47 @@ describe("Character Resources", () => {
     expect(result.contents[0].text).toContain("Invalid character URI format");
   });
 
+  it("should include selected class spells even when D&D Beyond marks them unprepared", async () => {
+    const character = {
+      ...mockCharacter,
+      classSpells: [{
+        entityTypeId: 1,
+        characterClassId: 1,
+        spells: [{
+          id: 99,
+          definition: {
+            id: 2247,
+            name: "Shield",
+            level: 1,
+            school: "Abjuration",
+            description: "A protective magical barrier.",
+            range: null,
+            duration: null,
+            activation: null,
+            components: null,
+            componentsDescription: null,
+            concentration: false,
+            ritual: false,
+          },
+          prepared: false,
+          alwaysPrepared: false,
+          usesSpellSlot: true,
+        }],
+      }],
+    } as DdbCharacter;
+    const mockClient = createMockClient();
+    vi.mocked(mockClient.get).mockResolvedValue(character);
+
+    const { mockServer, handlers } = createMockServer();
+    registerCharacterResources(mockServer as any, mockClient);
+
+    const uri = { toString: () => "dndbeyond://character/12345/spells" };
+    const result = await handlers["D&D Beyond Character Spells"](uri);
+
+    expect(result.contents[0].text).toContain("Level 1:");
+    expect(result.contents[0].text).toContain("Shield");
+  });
+
   it("should format characters list", async () => {
     const mockClient = createMockClient();
     vi.mocked(mockClient.get)

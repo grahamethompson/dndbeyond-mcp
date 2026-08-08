@@ -15,6 +15,7 @@ import type { DdbCharacterListData, DdbCharacterListItem } from "../types/api.js
 import { getUserId } from "../api/auth.js";
 import { fuzzyMatch, levenshteinDistance } from "../utils/fuzzy-match.js";
 import { ABILITY_NAMES, ABILITY_SUBTYPE_MAP, calculateAbilityModifier, sumModifierBonuses, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
+import { getAllSpells, getPreparedOrKnownSpells } from "../utils/character-spells.js";
 
 interface GetCharacterParams {
   characterId?: number;
@@ -57,11 +58,9 @@ function formatHp(char: DdbCharacter): string {
 }
 
 function formatSpells(char: DdbCharacter): string {
-  const allSpells = getAllSpells(char);
+  const prepared = getPreparedOrKnownSpells(char);
+  if (prepared.length === 0) return StringUtils.EMPTY;
 
-  if (allSpells.length === 0) return StringUtils.EMPTY;
-
-  const prepared = allSpells.filter((s) => s.prepared || s.alwaysPrepared);
   const preparedByLevel = prepared.reduce((acc, spell) => {
     const level = spell.definition.level;
     if (!acc[level]) acc[level] = [];
@@ -89,29 +88,6 @@ function formatInventory(char: DdbCharacter): string {
   });
 
   return `\nEquipped Items:\n${items.join("\n")}`;
-}
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-function getAllSpells(char: DdbCharacter): DdbSpell[] {
-  const spells = [
-    ...(char.spells.class ?? []),
-    ...(char.spells.race ?? []),
-    ...(char.spells.background ?? []),
-    ...(char.spells.item ?? []),
-    ...(char.spells.feat ?? []),
-    ...(char.classSpells ?? []).flatMap((entry) => entry.spells ?? []),
-  ];
-
-  const seen = new Set<string>();
-  return spells.filter((spell) => {
-    const key = String(spell.definition?.id ?? spell.definition?.definitionKey ?? `${spell.definition?.name}:${spell.id}`);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 function stripHtml(s: string | null | undefined): string {
@@ -357,7 +333,10 @@ function formatSpellcasting(char: DdbCharacter): string {
   const dcStrings = spellcastingClasses.map(cls => {
     const abilityId = SPELLCASTING_ABILITY[cls.definition.name] ?? 5;
     const abilityMod = getAbilityModNumeric(char, abilityId);
-    const spellSaveDC = 8 + profBonus + abilityMod;
+    const classSlug = cls.definition.name.toLowerCase().replace(/\s+/g, "-");
+    const spellSaveBonus = sumModifierBonuses(char.modifiers, "spell-save-dc")
+      + sumModifierBonuses(char.modifiers, `${classSlug}-spell-save-dc`);
+    const spellSaveDC = 8 + profBonus + abilityMod + spellSaveBonus;
     const spellAttack = profBonus + abilityMod;
     const attackSign = spellAttack >= 0 ? "+" : "";
 
@@ -834,8 +813,7 @@ function formatCharacterFull(char: DdbCharacter): string {
   const definitionSections: string[] = [];
 
   // Spells
-  const allSpells = getAllSpells(char);
-  const preparedSpells = allSpells.filter((s) => s.prepared || s.alwaysPrepared);
+  const preparedSpells = getPreparedOrKnownSpells(char);
   if (preparedSpells.length > 0) {
     const spellDefs = preparedSpells
       .sort((a, b) => a.definition.level - b.definition.level || a.definition.name.localeCompare(b.definition.name))

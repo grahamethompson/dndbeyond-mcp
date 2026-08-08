@@ -419,7 +419,84 @@ describe("Spell Save DC Calculation", () => {
             concentration: false,
             ritual: false,
           },
-          prepared: true,
+          prepared: false,
+          alwaysPrepared: false,
+          usesSpellSlot: true,
+        }],
+      }],
+    };
+
+    const client = createMockClient();
+    vi.mocked(client.get).mockResolvedValue(character);
+
+    const result = await getCharacter(client, { characterId: 12345, detail: "full" });
+    expect(result.content[0].text).toContain("Prepared Spells:");
+    expect(result.content[0].text).toContain("Level 1: Shield");
+    expect(result.content[0].text).toContain("=== Spell Definitions ===");
+    expect(result.content[0].text).toContain("Shield (Level 1 Abjuration)");
+    expect(result.content[0].text).toContain("A protective magical barrier.");
+  });
+
+  it("should apply class-specific spell save DC modifiers", async () => {
+    const character: DdbCharacter = {
+      ...baseCharacter,
+      stats: [
+        { id: 1, value: 10 },
+        { id: 2, value: 13 },
+        { id: 3, value: 15 },
+        { id: 4, value: 10 },
+        { id: 5, value: 10 },
+        { id: 6, value: 20 },
+      ],
+      classes: [
+        {
+          id: 1,
+          definition: { name: "Sorcerer" },
+          subclassDefinition: null,
+          level: 6,
+          isStartingClass: true,
+          classFeatures: [],
+        },
+      ],
+      inventory: [],
+      modifiers: {
+        race: [],
+        class: [{
+          id: 1,
+          type: "bonus",
+          subType: "sorcerer-spell-save-dc",
+          value: 1,
+          friendlyTypeName: "Bonus",
+          friendlySubtypeName: "Sorcerer Spell Save DC",
+          componentId: 1,
+          componentTypeId: 1,
+        }],
+        background: [],
+        item: [],
+        feat: [],
+        condition: [],
+      },
+      spells: { race: [], class: [], background: [], item: [], feat: [] },
+      classSpells: [{
+        entityTypeId: 1,
+        characterClassId: 1,
+        spells: [{
+          id: 99,
+          definition: {
+            id: 2247,
+            name: "Shield",
+            level: 1,
+            school: "Abjuration",
+            description: "A protective magical barrier.",
+            range: null,
+            duration: null,
+            activation: null,
+            components: null,
+            componentsDescription: null,
+            concentration: false,
+            ritual: false,
+          },
+          prepared: false,
           alwaysPrepared: false,
           usesSpellSlot: true,
         }],
@@ -430,8 +507,7 @@ describe("Spell Save DC Calculation", () => {
     vi.mocked(client.get).mockResolvedValue(character);
 
     const result = await getCharacter(client, { characterId: 12345, detail: "sheet" });
-    expect(result.content[0].text).toContain("Prepared Spells:");
-    expect(result.content[0].text).toContain("Level 1: Shield");
+    expect(result.content[0].text).toContain("Spell Save DC: 17");
   });
 
   it("should calculate Cleric spell DC using WIS", async () => {
