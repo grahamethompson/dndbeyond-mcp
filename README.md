@@ -86,7 +86,7 @@ connecting by invoking the `setup_auth` MCP tool.
 ```toml
 [mcp_servers.dndbeyond]
 command = "npx"
-args = ["-y", "dndbeyond-mcp"]
+args = ["-y", "@grahamethompson/dndbeyond-mcp"]
 ```
 
 ### Claude Desktop
