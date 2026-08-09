@@ -190,6 +190,11 @@ Restart Claude Desktop after saving the configuration.
 | `level-up-guide` | Level-up walkthrough |
 | `rules-lookup` | Rules clarification |
 
+## Bugs and feature requests
+
+Found a bug or have an idea? [Open a GitHub issue](https://github.com/grahamethompson/dndbeyond-mcp/issues)
+or contact [@grahamethompson](https://github.com/grahamethompson).
+
 ## Development documentation
 
 - [Project roadmap](ROADMAP.md) — planned normalization, validation, and release improvements

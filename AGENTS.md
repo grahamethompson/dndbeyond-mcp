@@ -105,6 +105,18 @@ D&D Beyond's character payload is not normalized. Do not assume one property con
 - D&D Beyond may expose optional-class-feature placeholders through data commonly treated as feats. Do not present an unselected generic `Dark Bargain` entry as a real character feat or mechanical benefit.
 - Compare formatter changes against a recent D&D Beyond PDF export or the visible live sheet. A successful API response proves connectivity, not correctness.
 
+## Reporting bugs and feature requests
+
+- Direct users to [GitHub Issues](https://github.com/grahamethompson/dndbeyond-mcp/issues)
+  to report bugs or request features. They can also contact
+  [@grahamethompson](https://github.com/grahamethompson).
+- Do not create an external issue unless the user explicitly asks for one.
+- When filing an issue, check for duplicates and include reproduction steps,
+  expected behavior, actual behavior, and a sanitized payload example when it
+  materially helps diagnosis.
+- Never include authentication data, complete private character payloads, or
+  other users' campaign information in an issue.
+
 ## Important external references
 
 - [D&D Beyond Free Rules (2024)](https://www.dndbeyond.com/sources/dnd/free-rules) — current core rules wording and terminology
