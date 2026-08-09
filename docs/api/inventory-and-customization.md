@@ -92,6 +92,27 @@ interface NormalizedInventoryItem {
 }
 ```
 
+## Root custom items
+
+User-created inventory rows are separate from customized names on normal
+inventory records. With `includeCustomItems=true`, they appear in the root
+`customItems` array rather than `inventory`:
+
+```ts
+interface DdbCustomItem {
+  id: number;
+  name: string;
+  description?: string | null;
+  weight: number;
+  cost: number | null;
+  quantity: number;
+}
+```
+
+Inventory resources and comprehensive character sheets must merge these rows
+for display. A character can have an empty `inventory` array and still have
+root custom items.
+
 ## Currency
 
 ```ts
@@ -115,11 +136,12 @@ keys in the character payload:
 | `gp` | `gold` |
 | `pp` | `platinum` |
 
-## Selected class options
+## Selected options
 
 Generic class feature records describe containers such as “Eldritch
-Invocations” or “Pact Boon.” The character's actual selections are returned in
-`options.class`:
+Invocations” or “Pact Boon.” The character's actual selections are grouped by
+source in `options.class`, `options.race`, `options.feat`, and potentially other
+keys:
 
 ```ts
 interface DdbCharacterOption {
@@ -140,8 +162,10 @@ interface DdbCharacterOptions {
 ```
 
 **Verified:** a legacy Warlock's invocation names and Pact of the Blade were
-present in `options.class` but could not be reconstructed from the generic class
-feature names alone.
+present in `options.class`, while a hybrid 2024/legacy character's ability-score,
+spellcasting-ability, and weapon-mastery choices appeared in `options.race` and
+`options.feat`. These selections cannot be reconstructed reliably from generic
+feature names alone, so normalizers iterate every array-valued option group.
 
 ## Languages
 
@@ -206,4 +230,3 @@ enum interpretation:
 
 Additional live examples should be captured as sanitized regression fixtures
 before treating the entire enum as verified.
-

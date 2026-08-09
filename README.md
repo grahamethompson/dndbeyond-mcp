@@ -98,6 +98,18 @@ args = ["/absolute/path/to/dndbeyond-mcp/build/src/index.js"]
 After pulling or editing the source, run `npm ci`, `npm run build`, and
 `npm test`, then restart or reconnect the MCP server.
 
+### Claude Code CLI
+
+Add the published package as a user-scoped MCP server so it is available in all
+of your Claude Code projects:
+
+```bash
+claude mcp add --transport stdio --scope user dndbeyond -- npx -y @grahamethompson/dndbeyond-mcp
+```
+
+Run `claude mcp list` to verify the server was added. Restart Claude Code or use
+`/mcp` in an active session to check the connection.
+
 ### Claude Desktop
 
 Add the published package to the Claude Desktop configuration:

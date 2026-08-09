@@ -42,6 +42,7 @@ interface DdbCharacter {
   pactMagic?: DdbPactMagicPayload | null;
 
   inventory: DdbInventoryItem[];
+  customItems?: DdbCustomItem[];
   currencies: DdbCurrencies;
   characterValues?: DdbCharacterValue[];
 
@@ -88,6 +89,18 @@ The normalized score precedence is:
 
 Items such as Gauntlets of Ogre Power use a `set` modifier rather than changing
 the base `stats` entry.
+
+### 2024 backgrounds with legacy species
+
+**Observed and verified:** a character using a 2024 background can retain a
+legacy species' ability-score modifiers in `modifiers.race`. D&D Beyond does
+not apply those legacy species increases to the displayed sheet, but the raw
+character-service payload does not remove them.
+
+The MCP identifies the background ASI compatibility feat (for example,
+`Guide Ability Score Improvements`) and suppresses only race-group `bonus`
+modifiers whose subtype is an ability score. Other racial modifiers and legacy
+characters without a 2024 background ASI remain unchanged.
 
 ## Character level and proficiency bonus
 
@@ -164,7 +177,7 @@ then excludes features above the character's class level.
 
 Selected choices such as Warlock invocations and Pact Boons are not represented
 only by the generic class feature list. They are found in `options.class`; see
-[Inventory and customization](inventory-and-customization.md#selected-class-options).
+[Inventory and customization](inventory-and-customization.md#selected-options).
 
 ## Modifiers
 
@@ -201,6 +214,10 @@ Currently used modifier patterns include:
 | `language` | `celestial` | Grant a language |
 | `ignore` | `unarmored-dex-ac-bonus` | Disable a calculation component |
 
+Generic bonuses such as `saving-throws` and `ability-checks` apply to every
+corresponding roll in addition to any ability- or skill-specific bonus. An
+attuned Ring of Protection is an observed source of `bonus: saving-throws`.
+
 Modifier stacking semantics are only partially catalogued. Unknown modifier
 types or subtypes should be preserved for diagnostics rather than silently
 discarded at the API boundary.
@@ -218,8 +235,15 @@ root property. The MCP currently derives:
 - initiative from Dexterity plus `initiative` bonuses;
 - passive Perception, Insight, and Investigation from normalized skill totals;
 - senses from `set`, `set-base`, and `bonus` modifiers;
+- walking, flying, climbing, swimming, and burrowing speeds from race speed
+  fields plus `set` and `bonus` movement modifiers;
 - spell save DC and spell attack bonus from class ability, proficiency, and
   applicable modifiers.
+
+Limited-use action records can encode proficiency-bonus scaling as
+`maxUses: 0` with `useProficiencyBonus: true`. The normalized maximum is the
+base maximum plus the character's proficiency bonus; remaining uses are never
+reported below zero.
 
 These calculations should remain in shared normalizers so summary, sheet, full,
 and resource outputs cannot drift apart.
@@ -234,7 +258,10 @@ live character types:
 - a legacy 2014 Hexblade Warlock, which exposed level-indexed Pact Magic,
   invocation/item/racial spells, selected options, languages, custom skills,
   senses, attunement, and custom item names.
+- a 2024 Barbarian with a legacy Fairy species and subclass, which exposed
+  inactive legacy species ASIs, generic saving-throw bonuses, derived flight,
+  proficiency-based limited uses, race/feat option groups, root custom items,
+  and multiple casting modes for one spell definition.
 
 The regression fixtures intentionally contain no authentication material or
 complete private character payloads.
-

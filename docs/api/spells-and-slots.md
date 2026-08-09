@@ -124,6 +124,11 @@ When the same definition identity appears in multiple collections, merge the
 records while OR-ing `prepared`, `alwaysPrepared`, and `usesSpellSlot`, and
 retain every distinct source label.
 
+Duplicate definition records can represent distinct casting modes rather than
+accidental duplication. One racial spell definition was observed once with a
+`limitedUse` of 1/long rest and again with `usesSpellSlot: true`. Normalized
+spell entries retain both modes while listing the spell definition only once.
+
 ## Normalized spell entry
 
 The current normalization boundary is:
@@ -132,6 +137,11 @@ The current normalization boundary is:
 interface CharacterSpellEntry {
   spell: DdbSpell;
   sources: string[];
+  castingModes: Array<{
+    source: string;
+    usesSpellSlot: boolean;
+    limitedUse: DdbLimitedUse | null;
+  }>;
 }
 ```
 
@@ -234,4 +244,3 @@ item-granted spell does not by itself prove that casting it should consume a
 regular or Pact Magic slot; an item may use charges or provide another casting
 rule. A future cast normalizer should model `castMethod` explicitly and should
 not infer slot expenditure from the spell's name or level alone.
-

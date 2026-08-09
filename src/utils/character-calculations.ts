@@ -21,6 +21,8 @@ export const ABILITY_SUBTYPE_MAP: Record<number, string> = {
   6: "charisma-score",
 };
 
+const ABILITY_SCORE_SUBTYPES = new Set(Object.values(ABILITY_SUBTYPE_MAP));
+
 export function calculateAbilityModifier(score: number): string {
   const modifier = Math.floor((score - 10) / 2);
   return modifier >= 0 ? `+${modifier}` : `${modifier}`;
@@ -75,6 +77,50 @@ export function computeFinalAbilityScore(
   return score;
 }
 
+/**
+ * Detects the compatibility shape produced when a character uses a 2024
+ * background with a legacy species. The character service retains the old
+ * species ASIs in `modifiers.race`, even though the D&D Beyond sheet correctly
+ * uses only the background's ability-score choices.
+ */
+export function uses2024BackgroundAbilityScores(char: DdbCharacter): boolean {
+  const backgroundName = char.background?.definition?.name.trim().toLowerCase();
+  const expectedName = backgroundName
+    ? `${backgroundName} ability score improvements`
+    : null;
+
+  return (char.feats ?? []).some((feat) => {
+    const name = feat.definition.name.trim().toLowerCase();
+    return name === "ability score improvements" || name === expectedName;
+  });
+}
+
+/**
+ * Context-aware ability score calculation. Prefer this over
+ * `computeFinalAbilityScore` whenever the complete character is available.
+ */
+export function computeCharacterAbilityScore(char: DdbCharacter, id: number): number {
+  let modifiers = char.modifiers ?? {};
+
+  if (uses2024BackgroundAbilityScores(char) && Array.isArray(modifiers.race)) {
+    modifiers = {
+      ...modifiers,
+      race: modifiers.race.filter((modifier) => !(
+        modifier.type === "bonus"
+        && ABILITY_SCORE_SUBTYPES.has(modifier.subType)
+      )),
+    };
+  }
+
+  return computeFinalAbilityScore(
+    char.stats ?? [],
+    char.bonusStats ?? [],
+    char.overrideStats ?? [],
+    modifiers,
+    id
+  );
+}
+
 export function computeLevel(char: DdbCharacter): number {
   return char.classes.reduce((sum, cls) => sum + cls.level, 0);
 }
@@ -91,13 +137,7 @@ export function calculateMaxHp(char: DdbCharacter): number {
   // Character-service v5 returns baseHitPoints before Constitution. D&D
   // Beyond applies the current Constitution modifier once per character level.
   const constitutionModifier = level > 0
-    ? Math.floor((computeFinalAbilityScore(
-      char.stats ?? [],
-      char.bonusStats ?? [],
-      char.overrideStats ?? [],
-      modifiers,
-      3
-    ) - 10) / 2)
+    ? Math.floor((computeCharacterAbilityScore(char, 3) - 10) / 2)
     : 0;
 
   const flatModifierBonus = sumModifierBonuses(modifiers, "hit-points");
@@ -116,9 +156,9 @@ export function calculateCurrentHp(char: DdbCharacter): number {
 }
 
 export function calculateAc(char: DdbCharacter): number {
-  const dexMod = Math.floor((computeFinalAbilityScore(char.stats, char.bonusStats, char.overrideStats, char.modifiers, 2) - 10) / 2);
-  const conMod = Math.floor((computeFinalAbilityScore(char.stats, char.bonusStats, char.overrideStats, char.modifiers, 3) - 10) / 2);
-  const wisMod = Math.floor((computeFinalAbilityScore(char.stats, char.bonusStats, char.overrideStats, char.modifiers, 5) - 10) / 2);
+  const dexMod = Math.floor((computeCharacterAbilityScore(char, 2) - 10) / 2);
+  const conMod = Math.floor((computeCharacterAbilityScore(char, 3) - 10) / 2);
+  const wisMod = Math.floor((computeCharacterAbilityScore(char, 5) - 10) / 2);
 
   // Find equipped armor and shields
   let baseAc = 10;

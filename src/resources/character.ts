@@ -4,14 +4,14 @@ import { ENDPOINTS } from "../api/endpoints.js";
 import type { DdbCharacter } from "../types/character.js";
 import type { DdbCampaign, DdbCampaignCharacter2 } from "../types/api.js";
 import { HttpError } from "../resilience/index.js";
-import { ABILITY_NAMES, calculateAbilityModifier, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
-import { getCharacterSpellEntries } from "../utils/character-spells.js";
+import { ABILITY_NAMES, calculateAbilityModifier, computeCharacterAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
+import { formatCharacterSpellAccess, getCharacterSpellEntries } from "../utils/character-spells.js";
 import { formatInventoryItemLabel } from "../utils/character-inventory.js";
 
 function formatAbilityScores(char: DdbCharacter): string {
   return ABILITY_NAMES.map((name, idx) => {
     const id = idx + 1;
-    const score = computeFinalAbilityScore(char.stats, char.bonusStats, char.overrideStats, char.modifiers, id);
+    const score = computeCharacterAbilityScore(char, id);
     const modifier = calculateAbilityModifier(score);
     return `${name}: ${score} (${modifier})`;
   }).join(" | ");
@@ -59,7 +59,7 @@ function formatSpellList(char: DdbCharacter): string {
   const spellsByLevel = entries.reduce((acc, entry) => {
     const level = entry.spell.definition.level;
     if (!acc[level]) acc[level] = [];
-    acc[level].push(`${entry.spell.definition.name} [${entry.sources.join(", ")}]`);
+    acc[level].push(`${entry.spell.definition.name} [${formatCharacterSpellAccess(entry)}]`);
     return acc;
   }, {} as Record<number, string[]>);
 
@@ -80,8 +80,9 @@ function formatSpellList(char: DdbCharacter): string {
 function formatInventory(char: DdbCharacter): string {
   const equipped = char.inventory.filter((item) => item.equipped);
   const allItems = char.inventory;
+  const customItems = char.customItems ?? [];
 
-  if (allItems.length === 0) return `Inventory for ${char.name}: Empty`;
+  if (allItems.length === 0 && customItems.length === 0) return `Inventory for ${char.name}: Empty`;
 
   const lines = [
     `Inventory for ${char.name}:`,
@@ -102,6 +103,14 @@ function formatInventory(char: DdbCharacter): string {
     lines.push("", "Other Items:");
     lines.push(...unequipped.map((item) => {
       return `  - ${formatInventoryItemLabel(char, item)}`;
+    }));
+  }
+
+  if (customItems.length > 0) {
+    lines.push("", "Custom Items:");
+    lines.push(...customItems.map((item) => {
+      const quantity = item.quantity > 1 ? ` (x${item.quantity})` : "";
+      return `  - ${item.name}${quantity}`;
     }));
   }
 

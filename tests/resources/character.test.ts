@@ -267,6 +267,14 @@ describe("Character Resources", () => {
         isAttuned: true,
         quantity: 1,
       }],
+      customItems: [{
+        id: 44,
+        name: "Signet Ring",
+        description: null,
+        weight: 0,
+        cost: 5,
+        quantity: 1,
+      }],
       characterValues: [{ typeId: 8, valueId: "315389880", value: "Ioun stone" }],
     } as DdbCharacter;
     const mockClient = createMockClient();
@@ -279,6 +287,8 @@ describe("Character Resources", () => {
     });
 
     expect(result.contents[0].text).toContain("Ioun stone [attuned]");
+    expect(result.contents[0].text).toContain("Custom Items:");
+    expect(result.contents[0].text).toContain("Signet Ring");
     expect(result.contents[0].text).toContain("Currency: 50 SP, 125 GP, 2 PP");
   });
 

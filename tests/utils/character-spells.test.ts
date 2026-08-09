@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DdbCharacter, DdbSpell } from "../../src/types/character.js";
-import { getAllSpells, getCharacterSpellEntries, getPreparedOrKnownSpells } from "../../src/utils/character-spells.js";
+import { formatCharacterSpellAccess, getAllSpells, getCharacterSpellEntries, getPreparedOrKnownSpells } from "../../src/utils/character-spells.js";
 
 function createSpell(overrides: Partial<DdbSpell>): DdbSpell {
   return {
@@ -95,5 +95,36 @@ describe("character spell collections", () => {
     expect(entries.find((entry) => entry.spell.definition.name === "Misty Step")?.sources)
       .toEqual(["Class", "Item"]);
     expect(getPreparedOrKnownSpells(character)).toHaveLength(3);
+  });
+
+  it("should preserve limited-use and spell-slot casting modes on duplicate definitions", () => {
+    const character = {
+      spells: {
+        race: [
+          createSpell({
+            id: 10,
+            alwaysPrepared: true,
+            usesSpellSlot: false,
+            limitedUse: {
+              maxUses: 1,
+              numberUsed: 0,
+              resetType: 2,
+              resetTypeDescription: "Long Rest",
+            },
+          }),
+          createSpell({ id: 11, alwaysPrepared: true, usesSpellSlot: true }),
+        ],
+        class: [],
+        background: [],
+        item: [],
+        feat: [],
+      },
+      classSpells: [],
+    } as unknown as DdbCharacter;
+
+    const entries = getCharacterSpellEntries(character);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].castingModes).toHaveLength(2);
+    expect(formatCharacterSpellAccess(entries[0])).toBe("Race; 1/Long Rest + spell slots");
   });
 });

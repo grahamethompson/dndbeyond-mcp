@@ -11,12 +11,13 @@ import type {
   DdbCharacterOption,
   DdbRacialTrait,
   DdbInventoryItem,
+  DdbCustomItem,
 } from "../types/character.js";
 import type { DdbCharacterListData, DdbCharacterListItem } from "../types/api.js";
 import { getUserId } from "../api/auth.js";
 import { fuzzyMatch, levenshteinDistance } from "../utils/fuzzy-match.js";
-import { ABILITY_NAMES, ABILITY_SUBTYPE_MAP, calculateAbilityModifier, sumModifierBonuses, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
-import { getAllSpells, getCharacterSpellEntries } from "../utils/character-spells.js";
+import { ABILITY_NAMES, ABILITY_SUBTYPE_MAP, calculateAbilityModifier, sumModifierBonuses, computeCharacterAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
+import { formatCharacterSpellAccess, getAllSpells, getCharacterSpellEntries } from "../utils/character-spells.js";
 import { getPactMagicState } from "../utils/character-spell-slots.js";
 import { formatInventoryItemLabel, getInventoryDisplayName } from "../utils/character-inventory.js";
 
@@ -37,7 +38,7 @@ type ToolResult = { content: Array<{ type: "text"; text: string }> };
 function formatAbilityScores(char: DdbCharacter): string {
   return ABILITY_NAMES.map((name, idx) => {
     const id = idx + 1;
-    const score = computeFinalAbilityScore(char.stats, char.bonusStats, char.overrideStats, char.modifiers, id);
+    const score = computeCharacterAbilityScore(char, id);
     const modifier = calculateAbilityModifier(score);
     return `${name}: ${score} (${modifier})`;
   }).join(" | ");
@@ -67,7 +68,7 @@ function formatSpells(char: DdbCharacter): string {
   const spellsByLevel = entries.reduce((acc, entry) => {
     const level = entry.spell.definition.level;
     if (!acc[level]) acc[level] = [];
-    acc[level].push(`${entry.spell.definition.name} [${entry.sources.join(", ")}]`);
+    acc[level].push(`${entry.spell.definition.name} [${formatCharacterSpellAccess(entry)}]`);
     return acc;
   }, {} as Record<number, string[]>);
 
@@ -83,15 +84,29 @@ function formatSpells(char: DdbCharacter): string {
   return `\nPrepared Spells:\n${lines.join("\n")}`;
 }
 
-function formatInventory(char: DdbCharacter): string {
-  const equipped = char.inventory.filter((item) => item.equipped);
-  if (equipped.length === 0) return StringUtils.EMPTY;
+function formatCustomItemLabel(item: DdbCustomItem): string {
+  const quantity = item.quantity > 1 ? ` (x${item.quantity})` : "";
+  return `${item.name}${quantity}`;
+}
 
-  const items = equipped.map((item) => {
+function formatInventory(char: DdbCharacter, includeCustomItems = false): string {
+  const equipped = char.inventory.filter((item) => item.equipped);
+  const customItems = includeCustomItems ? (char.customItems ?? []) : [];
+  if (equipped.length === 0 && customItems.length === 0) return StringUtils.EMPTY;
+
+  const sections: string[] = [];
+  const equippedItems = equipped.map((item) => {
     return `  - ${formatInventoryItemLabel(char, item)}`;
   });
+  if (equippedItems.length > 0) {
+    sections.push(`Equipped Items:\n${equippedItems.join("\n")}`);
+  }
 
-  return `\nEquipped Items:\n${items.join("\n")}`;
+  if (customItems.length > 0) {
+    sections.push(`Custom Items:\n${customItems.map((item) => `  - ${formatCustomItemLabel(item)}`).join("\n")}`);
+  }
+
+  return `\n${sections.join("\n\n")}`;
 }
 
 function stripHtml(s: string | null | undefined): string {
@@ -141,7 +156,7 @@ function calculateProficiencyBonus(level: number): number {
 }
 
 function getAbilityScoreNumeric(char: DdbCharacter, id: number): number {
-  return computeFinalAbilityScore(char.stats, char.bonusStats, char.overrideStats, char.modifiers, id);
+  return computeCharacterAbilityScore(char, id);
 }
 
 function getAbilityModNumeric(char: DdbCharacter, id: number): number {
@@ -212,7 +227,10 @@ function formatSavingThrows(char: DdbCharacter): string {
   for (let id = 1; id <= 6; id++) {
     const mod = getAbilityModNumeric(char, id);
     const proficient = hasModifierBySubType(char.modifiers, SAVING_THROW_SUBTYPES[id], "proficiency");
-    const total = mod + (proficient ? profBonus : 0);
+    const total = mod
+      + (proficient ? profBonus : 0)
+      + sumModifierBonuses(char.modifiers, "saving-throws")
+      + sumModifierBonuses(char.modifiers, SAVING_THROW_SUBTYPES[id]);
     const sign = total >= 0 ? "+" : "";
     const prof = proficient ? " *" : "";
     saves.push(`${ABILITY_NAMES[id - 1]}: ${sign}${total}${prof}`);
@@ -226,7 +244,10 @@ function getSkillTotal(char: DdbCharacter, abilityId: number, subType: string): 
   const abilityMod = getAbilityModNumeric(char, abilityId);
   const proficient = hasModifierBySubType(char.modifiers, subType, "proficiency");
   const expertise = hasModifierBySubType(char.modifiers, subType, "expertise");
-  return abilityMod + (expertise ? profBonus * 2 : proficient ? profBonus : 0);
+  return abilityMod
+    + (expertise ? profBonus * 2 : proficient ? profBonus : 0)
+    + sumModifierBonuses(char.modifiers, "ability-checks")
+    + sumModifierBonuses(char.modifiers, subType);
 }
 
 function formatSkills(char: DdbCharacter): string {
@@ -388,14 +409,16 @@ function formatSpellcasting(char: DdbCharacter): string {
 function formatLimitedUseResources(char: DdbCharacter): string {
   const resources: string[] = [];
   const actions = char.actions ?? {};
+  const proficiencyBonus = calculateProficiencyBonus(computeLevel(char));
 
   for (const list of Object.values(actions)) {
     if (!Array.isArray(list)) continue;
     for (const action of list) {
       if (action.limitedUse) {
         const used = action.limitedUse.numberUsed;
-        const max = action.limitedUse.maxUses;
-        const remaining = max - used;
+        const max = action.limitedUse.maxUses
+          + (action.limitedUse.useProficiencyBonus ? proficiencyBonus : 0);
+        const remaining = Math.max(0, max - used);
         const resetNames: Record<number, string> = {
           1: "Short Rest",
           2: "Long Rest",
@@ -414,6 +437,40 @@ function formatLimitedUseResources(char: DdbCharacter): string {
 function formatFeatNames(char: DdbCharacter): string {
   if (!char.feats || char.feats.length === 0) return "None";
   return char.feats.map((f) => f.definition.name).join(", ");
+}
+
+function optionSourceLabel(source: string): string {
+  return source.replace(/(^|[-_])([a-z])/g, (_match, prefix, letter: string) => `${prefix ? " " : ""}${letter.toUpperCase()}`);
+}
+
+function getSelectedOptionGroups(char: DdbCharacter): Array<{
+  source: string;
+  label: string;
+  options: DdbCharacterOption[];
+}> {
+  return Object.entries(char.options ?? {})
+    .filter((entry): entry is [string, DdbCharacterOption[]] => Array.isArray(entry[1]) && entry[1].length > 0)
+    .map(([source, options]) => {
+      const seen = new Set<string>();
+      return {
+        source,
+        label: optionSourceLabel(source),
+        options: options.filter((option) => {
+          const key = option.definition.name.toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }),
+      };
+    });
+}
+
+function formatSelectedOptions(char: DdbCharacter): string {
+  const groups = getSelectedOptionGroups(char);
+  if (groups.length === 0) return "  None";
+  return groups
+    .map((group) => `  ${group.label}: ${group.options.map((option) => option.definition.name).join(", ")}`)
+    .join("\n");
 }
 
 function getActiveClassFeatures(char: DdbCharacter): Array<{ name: string; className: string; level: number }> {
@@ -465,16 +522,47 @@ function formatRacialTraitNames(char: DdbCharacter): string {
   return traits.map((t) => t.definition.name).join(", ");
 }
 
+function getSetModifierValue(char: DdbCharacter, subType: string): number {
+  let value = 0;
+  for (const list of Object.values(char.modifiers ?? {})) {
+    if (!Array.isArray(list)) continue;
+    for (const modifier of list) {
+      if (
+        (modifier.type === "set" || modifier.type === "set-base")
+        && modifier.subType === subType
+        && modifier.value != null
+      ) {
+        value = Math.max(value, modifier.value);
+      }
+    }
+  }
+  return value;
+}
+
 function formatSpeed(char: DdbCharacter): string {
-  const baseSpeed = char.race.weightSpeeds?.normal?.walk ?? 30;
+  const base = char.race.weightSpeeds?.normal ?? {};
+  const sharedBonus = sumModifierBonuses(char.modifiers, "speed")
+    + sumModifierBonuses(char.modifiers, "unarmored-movement");
+  const movementTypes: Array<{ key: "walk" | "fly" | "climb" | "swim" | "burrow"; label: string; modifier: string }> = [
+    { key: "walk", label: "walking", modifier: "innate-speed-walking" },
+    { key: "fly", label: "flying", modifier: "innate-speed-flying" },
+    { key: "climb", label: "climbing", modifier: "innate-speed-climbing" },
+    { key: "swim", label: "swimming", modifier: "innate-speed-swimming" },
+    { key: "burrow", label: "burrowing", modifier: "innate-speed-burrowing" },
+  ];
 
-  // Check modifiers for speed bonuses
-  let speedBonus = sumModifierBonuses(char.modifiers, "speed");
-  speedBonus += sumModifierBonuses(char.modifiers, "unarmored-movement");
-  speedBonus += sumModifierBonuses(char.modifiers, "innate-speed-walking");
+  const speeds = movementTypes.flatMap(({ key, label, modifier }) => {
+    const baseValue = Math.max(base[key] ?? 0, getSetModifierValue(char, modifier));
+    if (key !== "walk" && baseValue <= 0) return [];
+    const normalizedBase = key === "walk" && baseValue <= 0 ? 30 : baseValue;
+    const total = normalizedBase + sharedBonus + sumModifierBonuses(char.modifiers, modifier);
+    return [{ label, total }];
+  });
 
-  const totalSpeed = baseSpeed + speedBonus;
-  return `Speed: ${totalSpeed} ft`;
+  if (speeds.length === 1 && speeds[0].label === "walking") {
+    return `Speed: ${speeds[0].total} ft`;
+  }
+  return `Speed: ${speeds.map((speed) => `${speed.total} ft ${speed.label}`).join(", ")}`;
 }
 
 function getSenseDistance(char: DdbCharacter, subType: string): number {
@@ -648,6 +736,9 @@ function formatCharacterSheet(char: DdbCharacter): string {
     `--- Feats ---`,
     formatFeatNames(char),
     StringUtils.EMPTY,
+    `--- Selected Options ---`,
+    formatSelectedOptions(char),
+    StringUtils.EMPTY,
     `--- Class Features ---`,
     formatClassFeatureNames(char),
     StringUtils.EMPTY,
@@ -655,7 +746,7 @@ function formatCharacterSheet(char: DdbCharacter): string {
     formatRacialTraitNames(char)
   );
 
-  const inventory = formatInventory(char);
+  const inventory = formatInventory(char, true);
   if (inventory) sections.push(inventory);
 
   // Add traits display
@@ -684,7 +775,7 @@ interface DefinitionResult {
   text: string;
 }
 
-function formatSpellDefinition(spell: DdbSpell, sources: string[] = []): string {
+function formatSpellDefinition(spell: DdbSpell, sources: string[] = [], access?: string): string {
   const d = spell.definition;
   const ACTIVATION_TYPES: Record<number, string> = {
     1: "Action",
@@ -731,6 +822,7 @@ function formatSpellDefinition(spell: DdbSpell, sources: string[] = []): string 
   const lines = [
     `${d.name} (${levelLabel} ${d.school})`,
     ...(sources.length > 0 ? [`Character Sources: ${sources.join(", ")}`] : []),
+    ...(access && access !== sources.join(", ") ? [`Character Casting: ${access}`] : []),
     `Casting Time: ${castingTime}`,
     `Range: ${range}`,
     `Components: ${components || "None"}${materialNote}`,
@@ -758,9 +850,9 @@ function formatClassFeatureDefinition(feature: DdbClassFeature, className: strin
   return lines.join("\n");
 }
 
-function formatClassOptionDefinition(option: DdbCharacterOption): string {
+function formatOptionDefinition(option: DdbCharacterOption, source: string): string {
   const description = option.definition.description ?? option.definition.snippet ?? "";
-  return `${option.definition.name} (Selected Class Option)\n\n${stripHtml(description)}`;
+  return `${option.definition.name} (Selected ${optionSourceLabel(source)} Option)\n\n${stripHtml(description)}`;
 }
 
 function formatRacialTraitDefinition(trait: DdbRacialTrait, raceName: string): string {
@@ -792,19 +884,21 @@ function searchDefinitions(char: DdbCharacter, query: string): DefinitionResult[
         type: "Spell",
         name: spell.definition.name,
         source: `${entry.sources.join(", ")} | Level ${spell.definition.level} ${spell.definition.school}`,
-        text: formatSpellDefinition(spell, entry.sources),
+        text: formatSpellDefinition(spell, entry.sources, formatCharacterSpellAccess(entry)),
       });
     }
   }
 
-  for (const option of char.options?.class ?? []) {
-    if (option.definition.name.toLowerCase().includes(q)) {
-      results.push({
-        type: "Class Option",
-        name: option.definition.name,
-        source: "Selected Class Option",
-        text: formatClassOptionDefinition(option),
-      });
+  for (const group of getSelectedOptionGroups(char)) {
+    for (const option of group.options) {
+      if (option.definition.name.toLowerCase().includes(q)) {
+        results.push({
+          type: `${group.label} Option`,
+          name: option.definition.name,
+          source: `Selected ${group.label} Option`,
+          text: formatOptionDefinition(option, group.source),
+        });
+      }
     }
   }
 
@@ -910,14 +1004,13 @@ function formatCharacterFull(char: DdbCharacter): string {
   if (spellEntries.length > 0) {
     const spellDefs = spellEntries
       .sort((a, b) => a.spell.definition.level - b.spell.definition.level || a.spell.definition.name.localeCompare(b.spell.definition.name))
-      .map((entry) => formatSpellDefinition(entry.spell, entry.sources));
+      .map((entry) => formatSpellDefinition(entry.spell, entry.sources, formatCharacterSpellAccess(entry)));
     definitionSections.push(`\n=== Spell Definitions ===\n\n${spellDefs.join("\n\n---\n\n")}`);
   }
 
-  const selectedClassOptions = char.options?.class ?? [];
-  if (selectedClassOptions.length > 0) {
-    const optionDefs = selectedClassOptions.map(formatClassOptionDefinition);
-    definitionSections.push(`\n=== Selected Class Option Definitions ===\n\n${optionDefs.join("\n\n---\n\n")}`);
+  for (const group of getSelectedOptionGroups(char)) {
+    const optionDefs = group.options.map((option) => formatOptionDefinition(option, group.source));
+    definitionSections.push(`\n=== Selected ${group.label} Option Definitions ===\n\n${optionDefs.join("\n\n---\n\n")}`);
   }
 
   // Feats

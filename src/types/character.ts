@@ -24,6 +24,7 @@ export interface DdbCharacter {
     spells: DdbSpell[];
   }>;
   inventory: DdbInventoryItem[];
+  customItems?: DdbCustomItem[];
   deathSaves: DdbDeathSaves;
   traits: DdbTraits;
   preferences: Record<string, unknown>;
@@ -144,6 +145,7 @@ export interface DdbSpell {
   prepared: boolean;
   alwaysPrepared: boolean;
   usesSpellSlot: boolean;
+  limitedUse?: DdbLimitedUse | null;
 }
 
 export interface DdbInventoryItem {
@@ -163,6 +165,15 @@ export interface DdbInventoryItem {
   };
   equipped: boolean;
   isAttuned?: boolean;
+  quantity: number;
+}
+
+export interface DdbCustomItem {
+  id: number;
+  name: string;
+  description?: string | null;
+  weight: number;
+  cost: number | null;
   quantity: number;
 }
 
@@ -207,8 +218,11 @@ export interface DdbTraits {
 }
 
 export interface DdbLimitedUse {
+  name?: string | null;
   maxUses: number;
   numberUsed: number;
+  useProficiencyBonus?: boolean;
+  proficiencyBonusOperator?: number;
   resetType: number; // 1 = Short Rest, 2 = Long Rest, 3 = Dawn, 4 = Other
   resetTypeDescription: string;
 }
@@ -231,6 +245,8 @@ export interface DdbModifier {
   friendlySubtypeName: string;
   componentId: number;
   componentTypeId: number;
+  isGranted?: boolean;
+  restriction?: string | null;
 }
 
 export interface DdbFeat {

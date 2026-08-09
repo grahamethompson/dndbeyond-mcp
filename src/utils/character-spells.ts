@@ -3,6 +3,13 @@ import type { DdbCharacter, DdbSpell } from "../types/character.js";
 export interface CharacterSpellEntry {
   spell: DdbSpell;
   sources: string[];
+  castingModes: CharacterSpellCastingMode[];
+}
+
+export interface CharacterSpellCastingMode {
+  source: string;
+  usesSpellSlot: boolean;
+  limitedUse: DdbSpell["limitedUse"];
 }
 
 export function getSpellKey(spell: DdbSpell): string {
@@ -40,10 +47,30 @@ export function getCharacterSpellEntries(char: DdbCharacter): CharacterSpellEntr
     for (const spell of spells) {
       const key = getSpellKey(spell);
       const existing = merged.get(key);
+      const castingMode: CharacterSpellCastingMode = {
+        source,
+        usesSpellSlot: spell.usesSpellSlot,
+        limitedUse: spell.limitedUse,
+      };
       if (!existing) {
-        merged.set(key, { spell, sources: [source] });
+        merged.set(key, { spell, sources: [source], castingModes: [castingMode] });
         continue;
       }
+
+      const modeKey = JSON.stringify({
+        source: castingMode.source,
+        usesSpellSlot: castingMode.usesSpellSlot,
+        maxUses: castingMode.limitedUse?.maxUses ?? null,
+        resetType: castingMode.limitedUse?.resetType ?? null,
+      });
+      const castingModes = existing.castingModes.some((mode) => JSON.stringify({
+        source: mode.source,
+        usesSpellSlot: mode.usesSpellSlot,
+        maxUses: mode.limitedUse?.maxUses ?? null,
+        resetType: mode.limitedUse?.resetType ?? null,
+      }) === modeKey)
+        ? existing.castingModes
+        : [...existing.castingModes, castingMode];
 
       merged.set(key, {
         spell: {
@@ -55,11 +82,47 @@ export function getCharacterSpellEntries(char: DdbCharacter): CharacterSpellEntr
         sources: existing.sources.includes(source)
           ? existing.sources
           : [...existing.sources, source],
+        castingModes,
       });
     }
   }
 
   return [...merged.values()];
+}
+
+const RESET_NAMES: Record<number, string> = {
+  1: "Short Rest",
+  2: "Long Rest",
+  3: "Dawn",
+  4: "Other",
+};
+
+/** Describe every way the character can cast a normalized spell entry. */
+export function formatCharacterSpellAccess(entry: CharacterSpellEntry): string {
+  const hasLimitedUse = entry.castingModes.some((mode) => mode.limitedUse != null);
+  if (!hasLimitedUse && entry.castingModes.length <= 1) {
+    return entry.sources.join(", ");
+  }
+
+  const access = entry.castingModes.flatMap((mode) => {
+    if (mode.limitedUse) {
+      const reset = mode.limitedUse.resetTypeDescription
+        || RESET_NAMES[mode.limitedUse.resetType]
+        || "Other";
+      const uses = mode.limitedUse.useProficiencyBonus
+        ? "PB"
+        : String(mode.limitedUse.maxUses);
+      return [`${uses}/${reset}`];
+    }
+    if (mode.usesSpellSlot) return ["spell slots"];
+    if (entry.spell.definition.level > 0) return ["at will"];
+    return [];
+  });
+  const uniqueAccess = [...new Set(access)];
+  const sourceText = entry.sources.join(", ");
+  return uniqueAccess.length > 0
+    ? `${sourceText}; ${uniqueAccess.join(" + ")}`
+    : sourceText;
 }
 
 export function getAllSpells(char: DdbCharacter): DdbSpell[] {
