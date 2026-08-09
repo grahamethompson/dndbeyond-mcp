@@ -164,6 +164,11 @@ Restart Claude Desktop after saving the configuration.
 | `level-up-guide` | Level-up walkthrough |
 | `rules-lookup` | Rules clarification |
 
+## Development documentation
+
+- [API data structures](docs/api/README.md) — maintained payload and normalization reference
+- [API research notes](docs/api-research.md) — endpoint discovery and historical findings
+
 ## Security
 
 This server stores your D&D Beyond session cookie locally at `~/.dndbeyond-mcp/config.json`. The cookie provides full access to your D&D Beyond account. Never share this file. The server only communicates with `dndbeyond.com` domains.

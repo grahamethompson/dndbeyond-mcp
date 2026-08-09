@@ -1,5 +1,9 @@
 # D&D Beyond API - Reverse Engineered Endpoints
 
+> Maintained data-structure documentation now lives in
+> [`docs/api/`](api/README.md). This file retains broader endpoint research and
+> historical findings.
+
 ## Current Verified Contract (2026-08-08)
 
 The current contract below was verified against D&D Beyond's production APIs and
