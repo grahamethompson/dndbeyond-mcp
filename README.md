@@ -186,6 +186,7 @@ Restart Claude Desktop after saving the configuration.
 
 ## Development documentation
 
+- [Project roadmap](ROADMAP.md) — planned normalization, validation, and release improvements
 - [API data structures](docs/api/README.md) — maintained payload and normalization reference
 - [API research notes](docs/api-research.md) — endpoint discovery and historical findings
 
