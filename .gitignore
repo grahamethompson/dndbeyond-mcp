@@ -32,5 +32,9 @@ Thumbs.db
 # Test coverage
 coverage/
 
+# Keep project tests visible even when a global ignore file excludes `tests/`.
+!tests/
+!tests/**
+
 # npm
 *.tgz
