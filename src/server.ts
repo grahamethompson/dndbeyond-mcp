@@ -74,7 +74,7 @@ export async function startServer(): Promise<void> {
   // Create MCP server
   const server = new McpServer({
     name: "dndbeyond-mcp",
-    version: "0.1.0",
+    version: "0.2.2",
   });
 
   // Register all prompts
