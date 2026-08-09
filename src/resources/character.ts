@@ -5,7 +5,8 @@ import type { DdbCharacter } from "../types/character.js";
 import type { DdbCampaign, DdbCampaignCharacter2 } from "../types/api.js";
 import { HttpError } from "../resilience/index.js";
 import { ABILITY_NAMES, calculateAbilityModifier, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
-import { getPreparedOrKnownSpells } from "../utils/character-spells.js";
+import { getCharacterSpellEntries } from "../utils/character-spells.js";
+import { formatInventoryItemLabel } from "../utils/character-inventory.js";
 
 function formatAbilityScores(char: DdbCharacter): string {
   return ABILITY_NAMES.map((name, idx) => {
@@ -52,20 +53,20 @@ function formatCharacter(char: DdbCharacter): string {
 }
 
 function formatSpellList(char: DdbCharacter): string {
-  const prepared = getPreparedOrKnownSpells(char);
-  if (prepared.length === 0) return "No prepared or known spells available.";
+  const entries = getCharacterSpellEntries(char);
+  if (entries.length === 0) return "No character spells available.";
 
-  const preparedByLevel = prepared.reduce((acc, spell) => {
-    const level = spell.definition.level;
+  const spellsByLevel = entries.reduce((acc, entry) => {
+    const level = entry.spell.definition.level;
     if (!acc[level]) acc[level] = [];
-    acc[level].push(spell.definition.name);
+    acc[level].push(`${entry.spell.definition.name} [${entry.sources.join(", ")}]`);
     return acc;
   }, {} as Record<number, string[]>);
 
   const lines = [
-    `Prepared Spells for ${char.name}:`,
+    `Spells for ${char.name}:`,
     "",
-    ...Object.entries(preparedByLevel)
+    ...Object.entries(spellsByLevel)
       .sort(([a], [b]) => Number(a) - Number(b))
       .map(([level, spells]) => {
         const levelLabel = level === "0" ? "Cantrips" : `Level ${level}`;
@@ -92,8 +93,7 @@ function formatInventory(char: DdbCharacter): string {
     lines.push("  None");
   } else {
     lines.push(...equipped.map((item) => {
-      const qty = item.quantity > 1 ? ` (x${item.quantity})` : "";
-      return `  - ${item.definition.name}${qty}`;
+      return `  - ${formatInventoryItemLabel(char, item)}`;
     }));
   }
 
@@ -101,10 +101,14 @@ function formatInventory(char: DdbCharacter): string {
   if (unequipped.length > 0) {
     lines.push("", "Other Items:");
     lines.push(...unequipped.map((item) => {
-      const qty = item.quantity > 1 ? ` (x${item.quantity})` : "";
-      return `  - ${item.definition.name}${qty}`;
+      return `  - ${formatInventoryItemLabel(char, item)}`;
     }));
   }
+
+  const currency = Object.entries(char.currencies ?? {})
+    .filter(([, amount]) => amount > 0)
+    .map(([coin, amount]) => `${amount} ${coin.toUpperCase()}`);
+  if (currency.length > 0) lines.push("", `Currency: ${currency.join(", ")}`);
 
   return lines.join("\n");
 }

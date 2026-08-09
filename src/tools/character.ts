@@ -8,6 +8,7 @@ import type {
   DdbSpell,
   DdbFeat,
   DdbClassFeature,
+  DdbCharacterOption,
   DdbRacialTrait,
   DdbInventoryItem,
 } from "../types/character.js";
@@ -15,7 +16,9 @@ import type { DdbCharacterListData, DdbCharacterListItem } from "../types/api.js
 import { getUserId } from "../api/auth.js";
 import { fuzzyMatch, levenshteinDistance } from "../utils/fuzzy-match.js";
 import { ABILITY_NAMES, ABILITY_SUBTYPE_MAP, calculateAbilityModifier, sumModifierBonuses, computeFinalAbilityScore, computeLevel, calculateMaxHp, calculateCurrentHp, calculateAc } from "../utils/character-calculations.js";
-import { getAllSpells, getPreparedOrKnownSpells } from "../utils/character-spells.js";
+import { getAllSpells, getCharacterSpellEntries } from "../utils/character-spells.js";
+import { getPactMagicState } from "../utils/character-spell-slots.js";
+import { formatInventoryItemLabel, getInventoryDisplayName } from "../utils/character-inventory.js";
 
 interface GetCharacterParams {
   characterId?: number;
@@ -58,23 +61,25 @@ function formatHp(char: DdbCharacter): string {
 }
 
 function formatSpells(char: DdbCharacter): string {
-  const prepared = getPreparedOrKnownSpells(char);
-  if (prepared.length === 0) return StringUtils.EMPTY;
+  const entries = getCharacterSpellEntries(char);
+  if (entries.length === 0) return StringUtils.EMPTY;
 
-  const preparedByLevel = prepared.reduce((acc, spell) => {
-    const level = spell.definition.level;
+  const spellsByLevel = entries.reduce((acc, entry) => {
+    const level = entry.spell.definition.level;
     if (!acc[level]) acc[level] = [];
-    acc[level].push(spell.definition.name);
+    acc[level].push(`${entry.spell.definition.name} [${entry.sources.join(", ")}]`);
     return acc;
   }, {} as Record<number, string[]>);
 
-  const lines = Object.entries(preparedByLevel)
+  const lines = Object.entries(spellsByLevel)
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([level, spells]) => {
       const levelLabel = level === "0" ? "Cantrips" : `Level ${level}`;
       return `  ${levelLabel}: ${spells.join(", ")}`;
     });
 
+  // Keep the established header for output compatibility. Source labels make
+  // clear when a listed spell is known or granted rather than prepared.
   return `\nPrepared Spells:\n${lines.join("\n")}`;
 }
 
@@ -83,8 +88,7 @@ function formatInventory(char: DdbCharacter): string {
   if (equipped.length === 0) return StringUtils.EMPTY;
 
   const items = equipped.map((item) => {
-    const qty = item.quantity > 1 ? ` (x${item.quantity})` : StringUtils.EMPTY;
-    return `  - ${item.definition.name}${qty}`;
+    return `  - ${formatInventoryItemLabel(char, item)}`;
   });
 
   return `\nEquipped Items:\n${items.join("\n")}`;
@@ -217,27 +221,50 @@ function formatSavingThrows(char: DdbCharacter): string {
   return saves.join(" | ");
 }
 
+function getSkillTotal(char: DdbCharacter, abilityId: number, subType: string): number {
+  const profBonus = calculateProficiencyBonus(computeLevel(char));
+  const abilityMod = getAbilityModNumeric(char, abilityId);
+  const proficient = hasModifierBySubType(char.modifiers, subType, "proficiency");
+  const expertise = hasModifierBySubType(char.modifiers, subType, "expertise");
+  return abilityMod + (expertise ? profBonus * 2 : proficient ? profBonus : 0);
+}
+
 function formatSkills(char: DdbCharacter): string {
   const profBonus = calculateProficiencyBonus(computeLevel(char));
 
   const lines = SKILL_DEFINITIONS.map((skill) => {
-    const abilityMod = getAbilityModNumeric(char, skill.abilityId);
     const proficient = hasModifierBySubType(char.modifiers, skill.subType, "proficiency");
     const expertise = hasModifierBySubType(char.modifiers, skill.subType, "expertise");
 
-    let total = abilityMod;
+    const total = getSkillTotal(char, skill.abilityId, skill.subType);
     let marker = "";
     if (expertise) {
-      total += profBonus * 2;
       marker = " **";
     } else if (proficient) {
-      total += profBonus;
       marker = " *";
     }
 
     const sign = total >= 0 ? "+" : "";
     return `  ${skill.name}: ${sign}${total}${marker}`;
   });
+
+  for (const custom of char.customProficiencies ?? []) {
+    if (custom.type !== 1 || !custom.statId) continue;
+    const proficiencyLevel = custom.proficiencyLevel ?? 0;
+    // D&D Beyond's custom-proficiency enum is 1=None, 2=Half,
+    // 3=Proficient, 4=Expertise.
+    const proficiencyBonus = proficiencyLevel >= 4
+      ? profBonus * 2
+      : proficiencyLevel === 3
+        ? profBonus
+        : proficiencyLevel === 2
+          ? Math.floor(profBonus / 2)
+          : 0;
+    const total = getAbilityModNumeric(char, custom.statId) + proficiencyBonus;
+    const sign = total >= 0 ? "+" : "";
+    const marker = proficiencyLevel >= 4 ? " **" : proficiencyLevel === 3 ? " *" : "";
+    lines.push(`  ${custom.name}: ${sign}${total}${marker}`);
+  }
 
   return lines.join("\n");
 }
@@ -271,6 +298,11 @@ function formatProficiencies(char: DdbCharacter): string {
   for (const list of Object.values(char.modifiers)) {
     if (!Array.isArray(list)) continue;
     for (const mod of list) {
+      if (mod.type === "language") {
+        const displayName = mod.friendlySubtypeName || mod.subType.replace(/-/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+        languages.add(displayName);
+        continue;
+      }
       if (mod.type !== "proficiency") continue;
       if (EXCLUDED_PROFICIENCY_SUBTYPES.has(mod.subType)) continue;
 
@@ -294,6 +326,10 @@ function formatProficiencies(char: DdbCharacter): string {
         weapons.add(displayName); // Default: treat unknown proficiencies as weapon-like
       }
     }
+  }
+
+  for (const custom of char.customProficiencies ?? []) {
+    if (custom.type === 3 && custom.name.trim()) languages.add(custom.name.trim());
   }
 
   const lines: string[] = [];
@@ -415,9 +451,12 @@ function getActiveClassFeatures(char: DdbCharacter): Array<{ name: string; class
 }
 
 function formatClassFeatureNames(char: DdbCharacter): string {
-  const features = getActiveClassFeatures(char);
-  if (features.length === 0) return "None";
-  return features.map((f) => f.name).join(", ");
+  const names = [
+    ...getActiveClassFeatures(char).map((feature) => feature.name),
+    ...(char.options?.class ?? []).map((option) => option.definition.name),
+  ];
+  const uniqueNames = [...new Set(names)];
+  return uniqueNames.length > 0 ? uniqueNames.join(", ") : "None";
 }
 
 function formatRacialTraitNames(char: DdbCharacter): string {
@@ -438,12 +477,49 @@ function formatSpeed(char: DdbCharacter): string {
   return `Speed: ${totalSpeed} ft`;
 }
 
-function formatSpellSlots(char: DdbCharacter): string {
-  if (!char.spellSlots || char.spellSlots.length === 0) {
-    return StringUtils.EMPTY;
+function getSenseDistance(char: DdbCharacter, subType: string): number {
+  let baseDistance = 0;
+  let bonusDistance = 0;
+  for (const list of Object.values(char.modifiers)) {
+    if (!Array.isArray(list)) continue;
+    for (const mod of list) {
+      if (mod.subType !== subType || mod.value == null) continue;
+      if (mod.type === "set" || mod.type === "set-base") {
+        baseDistance = Math.max(baseDistance, mod.value);
+      } else if (mod.type === "bonus") {
+        bonusDistance += mod.value;
+      }
+    }
   }
+  return baseDistance + bonusDistance;
+}
 
-  const lines = char.spellSlots
+function formatDerivedStats(char: DdbCharacter): string[] {
+  const initiative = getAbilityModNumeric(char, 2) + sumModifierBonuses(char.modifiers, "initiative");
+  const initiativeSign = initiative >= 0 ? "+" : "";
+  const passives = [
+    `Passive Perception: ${10 + getSkillTotal(char, 5, "perception")}`,
+    `Passive Insight: ${10 + getSkillTotal(char, 5, "insight")}`,
+    `Passive Investigation: ${10 + getSkillTotal(char, 4, "investigation")}`,
+  ];
+  const senses = [
+    ["Darkvision", getSenseDistance(char, "darkvision")],
+    ["Blindsight", getSenseDistance(char, "blindsight")],
+    ["Tremorsense", getSenseDistance(char, "tremorsense")],
+    ["Truesight", getSenseDistance(char, "truesight")],
+  ]
+    .filter(([, distance]) => Number(distance) > 0)
+    .map(([name, distance]) => `${name} ${distance} ft`);
+
+  return [
+    `Initiative: ${initiativeSign}${initiative}`,
+    passives.join(" | "),
+    ...(senses.length > 0 ? [`Senses: ${senses.join(", ")}`] : []),
+  ];
+}
+
+function formatSpellSlots(char: DdbCharacter): string {
+  const lines = (char.spellSlots ?? [])
     .filter(slot => slot.available > 0)
     .map(slot => {
       const filled = "\u25CF".repeat(slot.available - slot.used);
@@ -451,18 +527,14 @@ function formatSpellSlots(char: DdbCharacter): string {
       return `Level ${slot.level}: ${filled}${empty} (${slot.used}/${slot.available} used)`;
     });
 
-  if (lines.length === 0) return StringUtils.EMPTY;
-
-  let result = `\n--- Spell Slots ---\n${lines.join("\n")}`;
-
-  // Add pact magic if available
-  if (char.pactMagic && char.pactMagic.available > 0) {
-    const filled = "\u25CF".repeat(char.pactMagic.available - char.pactMagic.used);
-    const empty = "\u25CB".repeat(char.pactMagic.used);
-    result += `\nPact Magic (Level ${char.pactMagic.level}): ${filled}${empty} (${char.pactMagic.used}/${char.pactMagic.available} used)`;
+  const pactMagic = getPactMagicState(char);
+  if (pactMagic) {
+    const filled = "\u25CF".repeat(Math.max(0, pactMagic.available - pactMagic.used));
+    const empty = "\u25CB".repeat(Math.min(pactMagic.used, pactMagic.available));
+    lines.push(`Pact Magic (Level ${pactMagic.level}): ${filled}${empty} (${pactMagic.used}/${pactMagic.available} used)`);
   }
 
-  return result;
+  return lines.length > 0 ? `\n--- Spell Slots ---\n${lines.join("\n")}` : StringUtils.EMPTY;
 }
 
 function formatHitDice(char: DdbCharacter): string {
@@ -537,6 +609,7 @@ function formatCharacterSheet(char: DdbCharacter): string {
     `HP: ${formatHp(char)}`,
     `AC: ${calculateAc(char)}`,
     formatSpeed(char),
+    ...formatDerivedStats(char),
     StringUtils.EMPTY,
     `--- Ability Scores ---`,
     formatAbilityScores(char),
@@ -611,7 +684,7 @@ interface DefinitionResult {
   text: string;
 }
 
-function formatSpellDefinition(spell: DdbSpell): string {
+function formatSpellDefinition(spell: DdbSpell, sources: string[] = []): string {
   const d = spell.definition;
   const ACTIVATION_TYPES: Record<number, string> = {
     1: "Action",
@@ -657,6 +730,7 @@ function formatSpellDefinition(spell: DdbSpell): string {
 
   const lines = [
     `${d.name} (${levelLabel} ${d.school})`,
+    ...(sources.length > 0 ? [`Character Sources: ${sources.join(", ")}`] : []),
     `Casting Time: ${castingTime}`,
     `Range: ${range}`,
     `Components: ${components || "None"}${materialNote}`,
@@ -684,15 +758,22 @@ function formatClassFeatureDefinition(feature: DdbClassFeature, className: strin
   return lines.join("\n");
 }
 
+function formatClassOptionDefinition(option: DdbCharacterOption): string {
+  const description = option.definition.description ?? option.definition.snippet ?? "";
+  return `${option.definition.name} (Selected Class Option)\n\n${stripHtml(description)}`;
+}
+
 function formatRacialTraitDefinition(trait: DdbRacialTrait, raceName: string): string {
   const d = trait.definition;
   return `${d.name} (${raceName})\n\n${stripHtml(d.description)}`;
 }
 
-function formatItemDefinition(item: DdbInventoryItem): string {
+function formatItemDefinition(char: DdbCharacter, item: DdbInventoryItem): string {
   const d = item.definition;
+  const displayName = getInventoryDisplayName(char, item);
   const lines = [
-    `${d.name} (${d.type}, ${d.rarity})`,
+    `${displayName} (${d.type}, ${d.rarity})${item.isAttuned ? " [attuned]" : ""}`,
+    ...(displayName !== d.name ? [`D&D Beyond Item: ${d.name}`] : []),
     `Weight: ${d.weight} lb`,
   ];
   lines.push(StringUtils.EMPTY, stripHtml(d.description));
@@ -704,14 +785,25 @@ function searchDefinitions(char: DdbCharacter, query: string): DefinitionResult[
   const q = query.toLowerCase();
 
   // Search spells
-  const allSpells = getAllSpells(char);
-  for (const spell of allSpells) {
+  for (const entry of getCharacterSpellEntries(char)) {
+    const spell = entry.spell;
     if (spell.definition.name.toLowerCase().includes(q)) {
       results.push({
         type: "Spell",
         name: spell.definition.name,
-        source: `Level ${spell.definition.level} ${spell.definition.school}`,
-        text: formatSpellDefinition(spell),
+        source: `${entry.sources.join(", ")} | Level ${spell.definition.level} ${spell.definition.school}`,
+        text: formatSpellDefinition(spell, entry.sources),
+      });
+    }
+  }
+
+  for (const option of char.options?.class ?? []) {
+    if (option.definition.name.toLowerCase().includes(q)) {
+      results.push({
+        type: "Class Option",
+        name: option.definition.name,
+        source: "Selected Class Option",
+        text: formatClassOptionDefinition(option),
       });
     }
   }
@@ -791,12 +883,13 @@ function searchDefinitions(char: DdbCharacter, query: string): DefinitionResult[
 
   // Search equipped items
   for (const item of char.inventory.filter((i) => i.equipped)) {
-    if (item.definition.name.toLowerCase().includes(q)) {
+    const displayName = getInventoryDisplayName(char, item);
+    if (item.definition.name.toLowerCase().includes(q) || displayName.toLowerCase().includes(q)) {
       results.push({
         type: "Item",
-        name: item.definition.name,
+        name: displayName,
         source: `${item.definition.type}, ${item.definition.rarity}`,
-        text: formatItemDefinition(item),
+        text: formatItemDefinition(char, item),
       });
     }
   }
@@ -813,12 +906,18 @@ function formatCharacterFull(char: DdbCharacter): string {
   const definitionSections: string[] = [];
 
   // Spells
-  const preparedSpells = getPreparedOrKnownSpells(char);
-  if (preparedSpells.length > 0) {
-    const spellDefs = preparedSpells
-      .sort((a, b) => a.definition.level - b.definition.level || a.definition.name.localeCompare(b.definition.name))
-      .map((s) => formatSpellDefinition(s));
+  const spellEntries = getCharacterSpellEntries(char);
+  if (spellEntries.length > 0) {
+    const spellDefs = spellEntries
+      .sort((a, b) => a.spell.definition.level - b.spell.definition.level || a.spell.definition.name.localeCompare(b.spell.definition.name))
+      .map((entry) => formatSpellDefinition(entry.spell, entry.sources));
     definitionSections.push(`\n=== Spell Definitions ===\n\n${spellDefs.join("\n\n---\n\n")}`);
+  }
+
+  const selectedClassOptions = char.options?.class ?? [];
+  if (selectedClassOptions.length > 0) {
+    const optionDefs = selectedClassOptions.map(formatClassOptionDefinition);
+    definitionSections.push(`\n=== Selected Class Option Definitions ===\n\n${optionDefs.join("\n\n---\n\n")}`);
   }
 
   // Feats
@@ -876,7 +975,7 @@ function formatCharacterFull(char: DdbCharacter): string {
   // Equipped items with descriptions
   const equippedItems = char.inventory.filter((i) => i.equipped);
   if (equippedItems.length > 0) {
-    const itemDefs = equippedItems.map((i) => formatItemDefinition(i));
+    const itemDefs = equippedItems.map((i) => formatItemDefinition(char, i));
     definitionSections.push(`\n=== Equipped Item Definitions ===\n\n${itemDefs.join("\n\n---\n\n")}`);
   }
 
@@ -1461,14 +1560,14 @@ export async function updatePactMagic(
       `character:${params.characterId}`,
       60_000
     );
-    const pactLevel = character.pactMagic?.level;
-    if (!pactLevel) {
+    const pactMagic = getPactMagicState(character);
+    if (!pactMagic) {
       return { content: [{ type: "text", text: "This character has no pact magic slots." }] };
     }
 
     await client.put(
       ENDPOINTS.character.updatePactMagic(),
-      { characterId: params.characterId, [`level${pactLevel}`]: params.used },
+      { characterId: params.characterId, [`level${pactMagic.level}`]: params.used },
       [`character:${params.characterId}`]
     );
 
@@ -1612,25 +1711,25 @@ export async function castSpell(
 
     // Determine if warlock using pact magic
     const isWarlock = character.classes.some(cls => cls.definition.name === "Warlock");
-    const hasPactMagic = character.pactMagic && character.pactMagic.available > 0;
+    const pactMagic = getPactMagicState(character);
 
-    if (isWarlock && hasPactMagic && spellLevel <= character.pactMagic!.level) {
+    if (isWarlock && pactMagic && spellLevel <= pactMagic.level) {
       // Use pact magic slot
-      const newUsed = character.pactMagic!.used + 1;
-      if (newUsed > character.pactMagic!.available) {
+      const newUsed = pactMagic.used + 1;
+      if (newUsed > pactMagic.available) {
         return {
-          content: [{ type: "text", text: `No pact magic slots remaining (${character.pactMagic!.used}/${character.pactMagic!.available} used).` }],
+          content: [{ type: "text", text: `No pact magic slots remaining (${pactMagic.used}/${pactMagic.available} used).` }],
         };
       }
       await client.put(
         ENDPOINTS.character.updatePactMagic(),
-        { characterId: params.characterId, [`level${character.pactMagic!.level}`]: newUsed },
+        { characterId: params.characterId, [`level${pactMagic.level}`]: newUsed },
         [`character:${params.characterId}`]
       );
       return {
         content: [{
           type: "text",
-          text: `Cast ${spell.definition.name} using pact magic (level ${character.pactMagic!.level}). Pact slots: ${newUsed}/${character.pactMagic!.available} used.`,
+          text: `Cast ${spell.definition.name} using pact magic (level ${pactMagic.level}). Pact slots: ${newUsed}/${pactMagic.available} used.`,
         }],
       };
     }

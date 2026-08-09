@@ -212,6 +212,76 @@ describe("Character Resources", () => {
     expect(result.contents[0].text).toContain("Shield");
   });
 
+  it("should include false-flagged granted spells with source attribution", async () => {
+    const grantedSpell = {
+      id: 100,
+      definition: {
+        id: 3000,
+        name: "Dancing Lights",
+        level: 0,
+        school: "Evocation",
+        description: "Creates lights.",
+        range: null,
+        duration: null,
+        activation: null,
+        components: null,
+        componentsDescription: null,
+        concentration: false,
+        ritual: false,
+      },
+      prepared: false,
+      alwaysPrepared: false,
+      usesSpellSlot: false,
+    };
+    const character = {
+      ...mockCharacter,
+      spells: { ...mockCharacter.spells, race: [grantedSpell] },
+    } as DdbCharacter;
+    const mockClient = createMockClient();
+    vi.mocked(mockClient.get).mockResolvedValue(character);
+
+    const { mockServer, handlers } = createMockServer();
+    registerCharacterResources(mockServer as any, mockClient);
+    const result = await handlers["D&D Beyond Character Spells"]({
+      toString: () => "dndbeyond://character/12345/spells",
+    });
+
+    expect(result.contents[0].text).toContain("Dancing Lights [Race]");
+  });
+
+  it("should display custom item names, attunement, and currency", async () => {
+    const character = {
+      ...mockCharacter,
+      inventory: [{
+        id: 315389880,
+        definition: {
+          name: "Ioun Stone of Reserve",
+          description: "Stores spells.",
+          type: "Wondrous Item",
+          rarity: "Rare",
+          weight: 0,
+          cost: null,
+          isHomebrew: false,
+        },
+        equipped: true,
+        isAttuned: true,
+        quantity: 1,
+      }],
+      characterValues: [{ typeId: 8, valueId: "315389880", value: "Ioun stone" }],
+    } as DdbCharacter;
+    const mockClient = createMockClient();
+    vi.mocked(mockClient.get).mockResolvedValue(character);
+
+    const { mockServer, handlers } = createMockServer();
+    registerCharacterResources(mockServer as any, mockClient);
+    const result = await handlers["D&D Beyond Character Inventory"]({
+      toString: () => "dndbeyond://character/12345/inventory",
+    });
+
+    expect(result.contents[0].text).toContain("Ioun stone [attuned]");
+    expect(result.contents[0].text).toContain("Currency: 50 SP, 125 GP, 2 PP");
+  });
+
   it("should format characters list", async () => {
     const mockClient = createMockClient();
     vi.mocked(mockClient.get)

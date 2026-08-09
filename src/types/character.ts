@@ -33,12 +33,19 @@ export interface DdbCharacter {
   campaign: { id: number; name: string } | null;
   feats: DdbFeat[];
   notes: DdbNotes;
+  options?: Record<string, DdbCharacterOption[] | null>;
+  customProficiencies?: DdbCustomProficiency[];
+  characterValues?: DdbCharacterValue[];
   level?: number;
   pactMagic?: {
     level: number;
     used: number;
     available: number;
-  } | null;
+  } | Array<{
+    level: number;
+    used: number;
+    available: number;
+  }> | null;
   spellSlots?: Array<{
     level: number;
     used: number;
@@ -155,7 +162,34 @@ export interface DdbInventoryItem {
     baseArmorName?: string | null;
   };
   equipped: boolean;
+  isAttuned?: boolean;
   quantity: number;
+}
+
+export interface DdbCharacterOption {
+  componentId?: number;
+  componentTypeId?: number;
+  definition: {
+    id?: number;
+    name: string;
+    description?: string | null;
+    snippet?: string | null;
+  };
+}
+
+export interface DdbCustomProficiency {
+  id?: number;
+  name: string;
+  type: number;
+  statId?: number | null;
+  proficiencyLevel?: number;
+}
+
+export interface DdbCharacterValue {
+  typeId: number;
+  value: string | number | null;
+  valueId: string | number;
+  valueTypeId?: string | number;
 }
 
 export interface DdbDeathSaves {
