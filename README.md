@@ -27,7 +27,16 @@ This project is a fork of [AlexWorland/dndbeyond-mcp](https://github.com/AlexWor
 
 ### 1. Connect Codex with `npx`
 
-Add the published package to `~/.codex/config.toml`:
+The quickest option is a single Codex CLI command:
+
+```bash
+codex mcp add dndbeyond -- npx -y @grahamethompson/dndbeyond-mcp
+```
+
+This adds the server to Codex's shared MCP configuration. Restart Codex after
+running the command.
+
+Alternatively, add the published package to `~/.codex/config.toml` manually:
 
 ```toml
 [mcp_servers.dndbeyond]
@@ -35,9 +44,8 @@ command = "npx"
 args = ["-y", "@grahamethompson/dndbeyond-mcp"]
 ```
 
-`npx` downloads and runs the latest published version automatically, so you do
-not need to clone or build the repository. Restart Codex after saving the
-configuration.
+In either case, `npx` downloads and runs the latest published version
+automatically, so you do not need to clone or build the repository.
 
 ### 2. Authenticate with D&D Beyond
 
