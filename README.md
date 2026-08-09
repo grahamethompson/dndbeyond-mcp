@@ -25,16 +25,21 @@ This project is a fork of [AlexWorland/dndbeyond-mcp](https://github.com/AlexWor
 - Web browser used for the interactive D&D Beyond login
 - A D&D Beyond account
 
-### 1. Connect Codex with `npx`
+### 1. Connect your MCP client with `npx`
 
-The quickest option is a single Codex CLI command:
+For Codex, run:
 
 ```bash
 codex mcp add dndbeyond -- npx -y @grahamethompson/dndbeyond-mcp
 ```
 
-This adds the server to Codex's shared MCP configuration. Restart Codex after
-running the command.
+For Claude Code, run the equivalent command:
+
+```bash
+claude mcp add dndbeyond -- npx -y @grahamethompson/dndbeyond-mcp
+```
+
+Restart your MCP client after running the appropriate command.
 
 Alternatively, add the published package to `~/.codex/config.toml` manually:
 
@@ -49,7 +54,7 @@ automatically, so you do not need to clone or build the repository.
 
 ### 2. Authenticate with D&D Beyond
 
-Ask Codex:
+Ask Codex or Claude:
 
 ```text
 Use the D&D Beyond MCP setup_auth tool to authenticate my account.
@@ -64,7 +69,8 @@ to report that authentication succeeded. Credentials are stored locally in
 
 ### 3. Verify the connection
 
-To verify the connection without changing live character data, ask Codex:
+To verify the connection without changing live character data, ask your MCP
+client:
 
 ```text
 Use the D&D Beyond MCP to check authentication and list my characters.
