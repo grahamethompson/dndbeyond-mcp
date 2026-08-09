@@ -22,7 +22,7 @@ This project is a fork of [AlexWorland/dndbeyond-mcp](https://github.com/AlexWor
 
 - Node.js 20 or newer
 - npm
-- Google Chrome, used for the interactive D&D Beyond login
+- Web browser used for the interactive D&D Beyond login
 - A D&D Beyond account
 
 ### 1. Connect Codex with `npx`
